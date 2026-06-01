@@ -1,0 +1,1649 @@
+// ============================================================
+// Autiq Africa — Prisma Schema
+// Database: autiq_africa_db (PostgreSQL)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum EnterpriseAdminStatus {
+  Active
+  Inactive
+  Blocked
+
+  @@map("enterprise_admin_status")
+}
+
+enum ClientStatus {
+  Active
+  Inactive
+  Archived
+
+  @@map("client_status")
+}
+
+enum WorkshopStatus {
+  Active
+  Inactive
+
+  @@map("workshop_status")
+}
+
+enum WorkshopType {
+  Service
+  PaintAndPanel
+  FleetService
+  BodyShop
+
+  @@map("workshop_type")
+}
+
+enum UserRole {
+  Technician
+  WorkshopController
+  Accounts
+  FrontDesk
+  Manager
+  PartsInterpreter
+  CEO
+
+  @@map("user_role")
+}
+
+enum UserStatus {
+  Active
+  Inactive
+  Blocked
+
+  @@map("user_status")
+}
+
+enum CommunicationPreference {
+  WhatsApp
+  Email
+  PhoneCall
+
+  @@map("communication_preference")
+}
+
+enum CustomerStatus {
+  Active
+  Inactive
+
+  @@map("customer_status")
+}
+
+enum VehicleType {
+  Private
+  Fleet
+  Insurance
+  Warranty
+
+  @@map("vehicle_type")
+}
+
+enum AppointmentStatus {
+  Confirmed
+  WaitingApproval
+  Cancelled
+  Completed
+
+  @@map("appointment_status")
+}
+
+enum QuotePriority {
+  Red
+  Amber
+  Green
+
+  @@map("quote_priority")
+}
+
+enum QuotationStatus {
+  Draft
+  InternalReview
+  InternalUpdatesReceived
+  SentToCustomer
+  CustomerApproved
+  CustomerRejected
+
+  @@map("quotation_status")
+}
+
+enum QuotationUpdateStatus {
+  PendingUpdate
+  InProgress
+  Completed
+  NeedClarification
+
+  @@map("quotation_update_status")
+}
+
+enum JobStatus {
+  New
+  Accepted
+  InProgress
+  WaitingApproval
+  WaitingParts
+  Payment
+  Completed
+  QCReview
+  Critical
+  Ready
+  // Extended workflow statuses
+  SentToWorkshopController
+  AssignedToTechnician
+  AdditionalWorkIdentified
+  AdditionalWorkApproved
+  AdditionalWorkRejected
+  TechnicianCompleted
+  ReadyForInvoice
+  InvoiceGenerated
+  PaymentCleared
+  ReadyForDelivery
+  CustomerContactedForDelivery
+  VehicleDelivered
+  Closed
+  Cancelled
+
+  @@map("job_status")
+}
+
+enum JobPriority {
+  Red
+  Amber
+  Green
+
+  @@map("job_priority")
+}
+
+enum IssueSeverity {
+  High
+  Medium
+  Low
+
+  @@map("issue_severity")
+}
+
+enum ChecklistColor {
+  Red
+  Amber
+  Green
+
+  @@map("checklist_color")
+}
+
+enum MediaType {
+  Photo
+  Video
+  Document
+
+  @@map("media_type")
+}
+
+enum PricingMode {
+  StandardPrice
+  CustomPrice
+
+  @@map("pricing_mode")
+}
+
+enum PaymentMethod {
+  Cash
+  Bank
+  MobileMoney
+  Card
+
+  @@map("payment_method")
+}
+
+enum PaymentStatus {
+  DueToday
+  Overdue
+  PartPaid
+  Paid
+
+  @@map("payment_status")
+}
+
+enum ReminderStatus {
+  Active
+  Paused
+
+  @@map("reminder_status")
+}
+
+enum NotificationChannel {
+  WhatsApp
+  Email
+
+  @@map("notification_channel")
+}
+
+enum NotificationStatus {
+  Pending
+  Sent
+  Failed
+  Skipped
+
+  @@map("notification_status")
+}
+
+enum PortalLinkStatus {
+  Active
+  Expired
+  Revoked
+
+  @@map("portal_link_status")
+}
+
+// ============================================================
+// REPAIR WORKFLOW ENUMS (new for multiple-repair support)
+// ============================================================
+
+// RepairItem statuses — stored as string in DB for flexibility
+// Valid: Pending, AwaitingTechInput, AwaitingPartsInput, AwaitingControllerInput,
+//        InputsComplete, QuotationBuilt, CustomerApproved, CustomerRejected,
+//        InProgress, Completed, Cancelled, Skipped
+// CustomerApprovalStatus: Pending, Approved, Rejected, NotRequired
+// RepairInputStatus: Draft, Submitted, Returned, Approved
+// PartsAvailabilityStatus: InStock, AvailableNow, OrderRequired, Backordered, NotAvailable
+// InsuranceStatus: Active, Expired, ClaimInProgress, Approved, Rejected
+// PayerType: Customer, Insurance
+
+// ============================================================
+// ENTERPRISE ADMIN (Platform-level super admins)
+// ============================================================
+
+model EnterpriseAdmin {
+  id           String                @id @default(cuid())
+  adminCode    String                @unique @map("admin_code")
+  name         String
+  role         String                @default("Enterprise Admin")
+  email        String                @unique
+  loginEmail   String                @unique @map("login_email")
+  passwordHash String                @map("password_hash")
+  status       EnterpriseAdminStatus @default(Active)
+  clientId     String?               @map("client_id")
+  lastLoginAt  DateTime?             @map("last_login_at")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  deletedAt    DateTime?             @map("deleted_at")
+
+  client              Client?              @relation(fields: [clientId], references: [id])
+  loginActivities     LoginActivity[]
+  passwordResetTokens PasswordResetToken[]
+  createdWorkshops    Workshop[]           @relation("WorkshopCreatedByAdmin")
+  clientDrafts        ClientDraft[]
+
+  @@index([email])
+  @@index([status])
+  @@index([clientId])
+  @@map("enterprise_admins")
+}
+
+// ============================================================
+// CLIENTS (Dealer / Dealer Groups)
+// ============================================================
+
+model Client {
+  id                  String       @id @default(cuid())
+  name                String
+  country             String
+  defaultCurrency     String       @default("ZAR") @map("default_currency")
+  dealerLicenceNumber String?      @map("dealer_licence_number")
+  website             String?
+  logoUrl             String?      @map("logo_url")
+  invoiceFormatUrl    String?      @map("invoice_format_url")
+  status              ClientStatus @default(Active)
+  lastLoginAt         DateTime?    @map("last_login_at")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  deletedAt           DateTime?    @map("deleted_at")
+
+  workshops        Workshop[]
+  clientModules    ClientModule[]
+  enterpriseAdmins EnterpriseAdmin[]
+  roleUserCounts   WorkshopRoleUserCount[]
+
+  @@index([status])
+  @@index([country])
+  @@map("clients")
+}
+
+// ============================================================
+// MODULES (Available platform modules)
+// ============================================================
+
+model Module {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isOptional  Boolean  @default(false) @map("is_optional")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  clientModules ClientModule[]
+
+  @@map("modules")
+}
+
+model ClientModule {
+  id        String   @id @default(cuid())
+  clientId  String   @map("client_id")
+  moduleId  String   @map("module_id")
+  isEnabled Boolean  @default(true) @map("is_enabled")
+  enabledAt DateTime @default(now()) @map("enabled_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  module Module @relation(fields: [moduleId], references: [id])
+
+  @@unique([clientId, moduleId])
+  @@map("client_modules")
+}
+
+// ============================================================
+// WORKSHOPS (Workshop locations per client)
+// ============================================================
+
+model Workshop {
+  id            String         @id @default(cuid())
+  clientId      String         @map("client_id")
+  name          String
+  type          WorkshopType   @default(Service)
+  address       String?
+  phone         String?
+  whatsapp      String?
+  email         String?
+  website       String?
+  openingTime   String         @default("10:00") @map("opening_time")
+  closingTime   String         @default("20:00") @map("closing_time")
+  dailyJobLimit Int            @default(30) @map("daily_job_limit")
+  workshopCode     String?        @unique @map("workshop_code")
+  addressLine1     String?        @map("address_line1")
+  addressLine2     String?        @map("address_line2")
+  city             String?
+  state            String?
+  workshopCountry  String?        @map("workshop_country")
+  postalCode       String?        @map("postal_code")
+  ceoName          String?        @map("ceo_name")
+  ceoEmail         String?        @map("ceo_email")
+  ceoPhone         String?        @map("ceo_phone")
+  logoUrl          String?        @map("logo_url")
+  currency         String         @default("ZAR")
+  userCounts       Json?          @map("user_counts")
+  status           WorkshopStatus @default(Active)
+  createdByAdminId String?        @map("created_by_admin_id")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  deletedAt        DateTime?      @map("deleted_at")
+
+  client         Client                @relation(fields: [clientId], references: [id])
+  createdByAdmin EnterpriseAdmin?      @relation("WorkshopCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  users          User[]
+  customers      Customer[]
+  appointments   Appointment[]
+  quotations     Quotation[]
+  jobCards       JobCard[]
+  servicePricing ServicePricing[]
+  reminderRules    ApprovalReminderRule[]
+  notifications    Notification[]
+  roleUserCounts   WorkshopRoleUserCount[]
+  failedComponents FailedComponent[]
+  portalLinks      CustomerPortalLink[]
+  repairItems      RepairItem[]
+  vehicleInsurance VehicleInsuranceDetails[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([city])
+  @@index([createdByAdminId])
+  @@map("workshops")
+}
+
+// ============================================================
+// ROLES (Platform role definitions — stable codes used in JWT)
+// ============================================================
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users              User[]
+  workshopRoleCounts WorkshopRoleUserCount[]
+
+  @@map("roles")
+}
+
+// ============================================================
+// USERS (Workshop-level staff)
+// ============================================================
+
+model User {
+  id           String     @id @default(cuid())
+  workshopId   String     @map("workshop_id")
+  name         String
+  loginEmail   String     @unique @map("login_email")
+  passwordHash String     @map("password_hash")
+  role         UserRole
+  roleId       String?    @map("role_id")
+  phone        String?
+  status       UserStatus @default(Active)
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  deletedAt    DateTime?  @map("deleted_at")
+
+  workshop            Workshop            @relation(fields: [workshopId], references: [id])
+  roleRef             Role?               @relation(fields: [roleId], references: [id])
+  loginActivities     LoginActivity[]
+  passwordResetTokens PasswordResetToken[]
+  createdQuotations             Quotation[]  @relation("QuotationCreatedBy")
+  assignedAsQuoteTechnician     Quotation[]  @relation("QuotationAssignedTechnician")
+  assignedAsQuoteController     Quotation[]  @relation("QuotationAssignedController")
+  assignedAsQuotePartsInterpreter Quotation[] @relation("QuotationAssignedPartsInterpreter")
+  quotationUpdates    QuotationUpdate[]
+  assignedJobCards    JobCard[]           @relation("JobAssignedTechnician")
+  controlledJobCards  JobCard[]           @relation("JobAssignedController")
+  qcApprovedJobs      JobCard[]           @relation("JobQCApprovedBy")
+  recordedPayments    Payment[]
+  sentNotifications   Notification[]
+  failedComponents    FailedComponent[]       @relation("TechnicianFailedComponents")
+  partsReviews        FailedComponentReview[] @relation("PartsInterpreterReviews")
+  portalLinks         CustomerPortalLink[]
+  createdRepairItems  RepairItem[]            @relation("RepairItemCreatedBy")
+  repairInputs        RepairItemInput[]
+  partsOptions        RepairItemPartsOption[]
+  timeEstimates       RepairItemTimeEstimate[]
+  vehicleInsurance    VehicleInsuranceDetails[]
+
+  @@index([workshopId])
+  @@index([role])
+  @@index([roleId])
+  @@index([status])
+  @@map("users")
+}
+
+// ============================================================
+// LOGIN ACTIVITY
+// ============================================================
+
+model LoginActivity {
+  id                String   @id @default(cuid())
+  userId            String?  @map("user_id")
+  enterpriseAdminId String?  @map("enterprise_admin_id")
+  loginEmail        String   @map("login_email")
+  loginStatus       String   @map("login_status")
+  ipAddress         String?  @map("ip_address")
+  userAgent         String?  @map("user_agent")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user            User?            @relation(fields: [userId], references: [id])
+  enterpriseAdmin EnterpriseAdmin? @relation(fields: [enterpriseAdminId], references: [id])
+
+  @@index([userId])
+  @@index([loginEmail])
+  @@index([createdAt])
+  @@map("login_activities")
+}
+
+// ============================================================
+// CUSTOMERS (Vehicle owners / service clients)
+// ============================================================
+
+model Customer {
+  id                      String                  @id @default(cuid())
+  workshopId              String                  @map("workshop_id")
+  name                    String
+  phone                   String?
+  email                   String?
+  whatsapp                String?
+  communicationPreference CommunicationPreference @default(WhatsApp) @map("communication_preference")
+  licenseNumber           String?                 @map("license_number")
+  address                 String?
+  isPhoneVerified         Boolean                 @default(false) @map("is_phone_verified")
+  isEmailVerified         Boolean                 @default(false) @map("is_email_verified")
+  isWhatsappVerified      Boolean                 @default(false) @map("is_whatsapp_verified")
+  status                  CustomerStatus          @default(Active)
+  createdAt               DateTime                @default(now()) @map("created_at")
+  updatedAt               DateTime                @updatedAt @map("updated_at")
+  deletedAt               DateTime?               @map("deleted_at")
+
+  workshop          Workshop                  @relation(fields: [workshopId], references: [id])
+  vehicles          Vehicle[]
+  appointments      Appointment[]
+  quotations        Quotation[]
+  notifications     Notification[]
+  repairItems       RepairItem[]
+  insuranceDetails  VehicleInsuranceDetails[]
+
+  @@index([workshopId])
+  @@index([phone])
+  @@index([email])
+  @@map("customers")
+}
+
+// ============================================================
+// VEHICLES
+// ============================================================
+
+model Vehicle {
+  id             String      @id @default(cuid())
+  customerId     String      @map("customer_id")
+  registrationNo String      @map("registration_no")
+  vin            String?
+  makeModel      String      @map("make_model")
+  mileage        Int?
+  vehicleType    VehicleType @default(Private) @map("vehicle_type")
+  notes          String?
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  deletedAt      DateTime?   @map("deleted_at")
+
+  customer          Customer                  @relation(fields: [customerId], references: [id])
+  appointments      Appointment[]
+  quotations        Quotation[]
+  jobCards          JobCard[]
+  insuranceDetails  VehicleInsuranceDetails[]
+  repairItems       RepairItem[]
+
+  @@index([customerId])
+  @@index([registrationNo])
+  @@map("vehicles")
+}
+
+// ============================================================
+// APPOINTMENTS / CALENDAR BOOKINGS
+// ============================================================
+
+model Appointment {
+  id              String            @id @default(cuid())
+  appointmentCode String            @unique @map("appointment_code")
+  workshopId      String            @map("workshop_id")
+  customerId      String            @map("customer_id")
+  vehicleId       String            @map("vehicle_id")
+  appointmentDate DateTime          @map("appointment_date")
+  appointmentTime String            @map("appointment_time")
+  serviceType     String            @map("service_type")
+  notes           String?
+  status          AppointmentStatus @default(Confirmed)
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  workshop  Workshop  @relation(fields: [workshopId], references: [id])
+  customer  Customer  @relation(fields: [customerId], references: [id])
+  vehicle   Vehicle   @relation(fields: [vehicleId], references: [id])
+
+  @@index([workshopId])
+  @@index([appointmentDate])
+  @@index([customerId])
+  @@map("appointments")
+}
+
+// ============================================================
+// QUOTATIONS
+// ============================================================
+
+model Quotation {
+  id                       String          @id @default(cuid())
+  quoteNumber              String          @unique @map("quote_number")
+  workshopId               String          @map("workshop_id")
+  customerId               String          @map("customer_id")
+  vehicleId                String          @map("vehicle_id")
+  createdByUserId          String          @map("created_by_user_id")
+  repairType               String          @map("repair_type")
+  priority                 QuotePriority   @default(Amber)
+  customerComplaint        String?         @map("customer_complaint")
+  frontDeskStatus          String?         @map("front_desk_status")
+  totalEstimate            Decimal?        @db.Decimal(12, 2) @map("total_estimate")
+  currency                 String          @default("ZAR")
+  status                   QuotationStatus @default(Draft)
+  sendToWorkshopController         Boolean  @default(false) @map("send_to_workshop_controller")
+  sendToTechnician                 Boolean  @default(false) @map("send_to_technician")
+  sendToPartsInterpreter           Boolean  @default(false) @map("send_to_parts_interpreter")
+  assignedTechnicianId             String?  @map("assigned_technician_id")
+  assignedWorkshopControllerId     String?  @map("assigned_workshop_controller_id")
+  assignedPartsInterpreterId       String?  @map("assigned_parts_interpreter_id")
+  technicianSentBack               Boolean  @default(false) @map("technician_sent_back")
+  workshopControllerSentBack       Boolean  @default(false) @map("workshop_controller_sent_back")
+  partsInterpreterSentBack         Boolean  @default(false) @map("parts_interpreter_sent_back")
+  approvalToken                    String?  @unique @map("approval_token")
+  sentToCustomerAt         DateTime?       @map("sent_to_customer_at")
+  approvedAt               DateTime?       @map("approved_at")
+  rejectedAt               DateTime?       @map("rejected_at")
+  customerSignature        String?         @map("customer_signature")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+  deletedAt                DateTime?       @map("deleted_at")
+
+  estimatedDurationMinutes Int?     @map("estimated_duration_minutes")
+
+  workshop      Workshop               @relation(fields: [workshopId], references: [id])
+  customer      Customer               @relation(fields: [customerId], references: [id])
+  vehicle       Vehicle                @relation(fields: [vehicleId], references: [id])
+  createdBy                User                   @relation("QuotationCreatedBy", fields: [createdByUserId], references: [id])
+  assignedTechnician       User?                  @relation("QuotationAssignedTechnician",      fields: [assignedTechnicianId],         references: [id])
+  assignedWorkshopCtrl     User?                  @relation("QuotationAssignedController",      fields: [assignedWorkshopControllerId], references: [id])
+  assignedPartsInterpreter User?                  @relation("QuotationAssignedPartsInterpreter", fields: [assignedPartsInterpreterId],   references: [id])
+  lineItems     QuotationLineItem[]
+  updates       QuotationUpdate[]
+  media         QuotationMedia[]
+  reminderRules    ApprovalReminderRule[]
+  jobCard          JobCard?
+  invoice          Invoice?
+  failedComponents FailedComponent[]
+  repairItems      RepairItem[]
+
+  @@index([workshopId])
+  @@index([customerId])
+  @@index([status])
+  @@index([approvalToken])
+  @@map("quotations")
+}
+
+// ============================================================
+// QUOTATION LINE ITEMS (Labour, diagnostics, manual items)
+// ============================================================
+
+model QuotationLineItem {
+  id           String   @id @default(cuid())
+  quotationId  String   @map("quotation_id")
+  repairItemId String?  @map("repair_item_id")
+  item         String
+  addedByRole  String   @map("added_by_role")
+  repairTime   String?  @map("repair_time")
+  cost         Decimal? @db.Decimal(12, 2)
+  currency     String   @default("ZAR")
+  status       String   @default("Added")
+  lineType     String?  @map("line_type")
+  repairType              String?  @map("repair_type")
+  priority                String?  @map("priority")
+  notes                   String?  @map("notes")
+  technicianNotes              String?  @map("technician_notes") @db.Text
+  workshopControllerNotes      String?  @map("workshop_controller_notes") @db.Text
+  partsInterpreterNotes        String?  @map("parts_interpreter_notes") @db.Text
+  technicianCost               Decimal? @map("technician_cost") @db.Decimal(12, 2)
+  technicianRepairTime         String?  @map("technician_repair_time")
+  workshopControllerCost       Decimal? @map("workshop_controller_cost") @db.Decimal(12, 2)
+  workshopControllerRepairTime String?  @map("workshop_controller_repair_time")
+  partsInterpreterCost         Decimal? @map("parts_interpreter_cost") @db.Decimal(12, 2)
+  partsInterpreterRepairTime   String?  @map("parts_interpreter_repair_time")
+  selectedCostSource           String?  @map("selected_cost_source")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  quotation  Quotation   @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  repairItem RepairItem? @relation(fields: [repairItemId], references: [id])
+
+  @@index([quotationId])
+  @@map("quotation_line_items")
+}
+
+// ============================================================
+// QUOTATION UPDATES (Per-role internal updates)
+// ============================================================
+
+model QuotationUpdate {
+  id              String                @id @default(cuid())
+  quotationId     String                @map("quotation_id")
+  updatedByUserId String                @map("updated_by_user_id")
+  role            String
+  focusNote       String?               @map("focus_note")
+  timeEta         String?               @map("time_eta")
+  costImpact      Decimal?              @db.Decimal(12, 2) @map("cost_impact")
+  currency        String                @default("ZAR")
+  status          QuotationUpdateStatus @default(PendingUpdate)
+  notes           String?
+  sentBackAt      DateTime?             @map("sent_back_at")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  quotation     Quotation       @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  updatedBy     User            @relation(fields: [updatedByUserId], references: [id])
+  media         QuotationMedia[]
+  partLineItems PartLineItem[]
+
+  @@index([quotationId])
+  @@index([updatedByUserId])
+  @@map("quotation_updates")
+}
+
+// ============================================================
+// PART LINE ITEMS (Under Parts Interpreter quotation update)
+// ============================================================
+
+model PartLineItem {
+  id                String   @id @default(cuid())
+  quotationUpdateId String   @map("quotation_update_id")
+  oldPart           String   @map("old_part")
+  replacementPart   String   @map("replacement_part")
+  price             Decimal? @db.Decimal(12, 2)
+  currency          String   @default("ZAR")
+  eta               String?
+  replacementTime   String?  @map("replacement_time")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  quotationUpdate QuotationUpdate @relation(fields: [quotationUpdateId], references: [id], onDelete: Cascade)
+  media           QuotationMedia[]
+
+  @@index([quotationUpdateId])
+  @@map("part_line_items")
+}
+
+// ============================================================
+// QUOTATION MEDIA (Photos/videos against quotes/updates)
+// ============================================================
+
+model QuotationMedia {
+  id                String    @id @default(cuid())
+  quotationId       String    @map("quotation_id")
+  quotationUpdateId String?   @map("quotation_update_id")
+  partLineItemId    String?   @map("part_line_item_id")
+  uploadedByUserId  String?   @map("uploaded_by_user_id")
+  mediaType         MediaType @default(Photo) @map("media_type")
+  mediaCategory     String?   @map("media_category")
+  fileName          String    @map("file_name")
+  fileUrl           String    @map("file_url")
+  fileSize          Int?      @map("file_size")
+  mimeType          String?   @map("mime_type")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  quotation       Quotation        @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  quotationUpdate QuotationUpdate? @relation(fields: [quotationUpdateId], references: [id])
+  partLineItem    PartLineItem?    @relation(fields: [partLineItemId], references: [id])
+
+  @@index([quotationId])
+  @@index([quotationUpdateId])
+  @@map("quotation_media")
+}
+
+// ============================================================
+// APPROVAL REMINDER RULES
+// ============================================================
+
+model ApprovalReminderRule {
+  id                 String         @id @default(cuid())
+  ruleCode           String         @unique @map("rule_code")
+  workshopId         String         @map("workshop_id")
+  quotationId        String         @map("quotation_id")
+  channel            String
+  firstReminderDelay String         @map("first_reminder_delay")
+  repeatFrequency    String         @map("repeat_frequency")
+  maxAttempts        Int            @default(3) @map("max_attempts")
+  currentAttempts    Int            @default(0) @map("current_attempts")
+  stopCondition      String         @map("stop_condition")
+  messageTemplate    String?        @map("message_template")
+  status             ReminderStatus @default(Active)
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  workshop  Workshop  @relation(fields: [workshopId], references: [id])
+  quotation Quotation @relation(fields: [quotationId], references: [id])
+  logs      ReminderLog[]
+
+  @@index([workshopId])
+  @@index([quotationId])
+  @@index([status])
+  @@map("approval_reminder_rules")
+}
+
+model ReminderLog {
+  id      String   @id @default(cuid())
+  ruleId  String   @map("rule_id")
+  channel String
+  status  String
+  sentAt  DateTime @default(now()) @map("sent_at")
+
+  rule ApprovalReminderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@map("reminder_logs")
+}
+
+// ============================================================
+// JOB CARDS (Created after quotation approval)
+// ============================================================
+
+model JobCard {
+  id                       String      @id @default(cuid())
+  jobNumber                String      @unique @map("job_number")
+  workshopId               String      @map("workshop_id")
+  quotationId              String      @unique @map("quotation_id")
+  vehicleId                String?     @map("vehicle_id")
+  assignedControllerId     String?     @map("assigned_controller_id")
+  assignedTechnicianId     String?     @map("assigned_technician_id")
+  notifyPartsInterpreterId String?     @map("notify_parts_interpreter_id")
+  department               String?
+  priority                 JobPriority @default(Amber)
+  status                   JobStatus   @default(New)
+  expectedStartDate        DateTime?   @map("expected_start_date")
+  startedAt                DateTime?   @map("started_at")
+  completedAt              DateTime?   @map("completed_at")
+  completionNote           String?     @map("completion_note")
+  progress                 Int         @default(0)
+  qcApprovedAt             DateTime?   @map("qc_approved_at")
+  qcApprovedByUserId       String?     @map("qc_approved_by_user_id")
+  deliveryPreference       String?     @map("delivery_preference")
+  customerNotifiedAt       DateTime?   @map("customer_notified_at")
+  issueSeverity            String?     @map("issue_severity")
+  sentToControllerAt       DateTime?   @map("sent_to_controller_at")
+  closedAt                 DateTime?   @map("closed_at")
+  createdAt                DateTime    @default(now()) @map("created_at")
+  updatedAt                DateTime    @updatedAt @map("updated_at")
+  deletedAt                DateTime?   @map("deleted_at")
+
+  workshop           Workshop           @relation(fields: [workshopId], references: [id])
+  quotation          Quotation          @relation(fields: [quotationId], references: [id])
+  vehicle            Vehicle?           @relation(fields: [vehicleId], references: [id])
+  assignedTechnician User?              @relation("JobAssignedTechnician", fields: [assignedTechnicianId], references: [id])
+  assignedController User?              @relation("JobAssignedController", fields: [assignedControllerId], references: [id])
+  qcApprovedBy       User?              @relation("JobQCApprovedBy", fields: [qcApprovedByUserId], references: [id])
+  checklistItems         JobChecklistItem[]
+  issues                 JobIssue[]
+  media                  JobMedia[]
+  invoice                Invoice?
+  failedComponents       FailedComponent[]
+  portalLinks            CustomerPortalLink[]
+  deliveryPref           JobDeliveryPreference?
+  statusHistory          JobStatusHistory[]
+  completionReport       JobCompletionReport?
+  additionalWorkRequests JobAdditionalWorkRequest[]
+  repairItems            RepairItem[]
+  vehicleInsurance       VehicleInsuranceDetails[]
+
+  @@index([workshopId])
+  @@index([status])
+  @@index([priority])
+  @@index([assignedTechnicianId])
+  @@map("job_cards")
+}
+
+// ============================================================
+// JOB CHECKLIST ITEMS
+// ============================================================
+
+model JobChecklistItem {
+  id          String         @id @default(cuid())
+  jobCardId   String         @map("job_card_id")
+  label       String
+  state       String?
+  color       ChecklistColor @default(Green)
+  isRequired  Boolean        @default(true) @map("is_required")
+  completedAt DateTime?      @map("completed_at")
+  notes       String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  jobCard JobCard @relation(fields: [jobCardId], references: [id], onDelete: Cascade)
+
+  @@index([jobCardId])
+  @@map("job_checklist_items")
+}
+
+// ============================================================
+// JOB ISSUES (Raised by technicians)
+// ============================================================
+
+model JobIssue {
+  id             String        @id @default(cuid())
+  jobCardId      String        @map("job_card_id")
+  title          String
+  severity       IssueSeverity
+  note           String?
+  status         String        @default("Open")
+  raisedByUserId String?       @map("raised_by_user_id")
+  resolvedAt     DateTime?     @map("resolved_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  jobCard JobCard @relation(fields: [jobCardId], references: [id], onDelete: Cascade)
+
+  @@index([jobCardId])
+  @@index([severity])
+  @@map("job_issues")
+}
+
+// ============================================================
+// JOB MEDIA (Completion evidence, before/after)
+// ============================================================
+
+model JobMedia {
+  id               String    @id @default(cuid())
+  jobCardId        String    @map("job_card_id")
+  uploadedByUserId String?   @map("uploaded_by_user_id")
+  mediaType        MediaType @default(Photo) @map("media_type")
+  mediaCategory    String?   @map("media_category")
+  fileName         String    @map("file_name")
+  fileUrl          String    @map("file_url")
+  fileSize         Int?      @map("file_size")
+  mimeType         String?   @map("mime_type")
+  customerVisible  Boolean   @default(false) @map("customer_visible")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  jobCard JobCard @relation(fields: [jobCardId], references: [id], onDelete: Cascade)
+
+  @@index([jobCardId])
+  @@map("job_media")
+}
+
+// ============================================================
+// SERVICE TEMPLATES (e.g. Major Service, Brake Repair)
+// ============================================================
+
+model ServiceTemplate {
+  id               String      @id @default(cuid())
+  name             String
+  module           String
+  defaultPricingMode PricingMode @default(StandardPrice) @map("default_pricing_mode")
+  duration         String?
+  isActive         Boolean     @default(true) @map("is_active")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  checklistTemplates ServiceChecklistTemplate[]
+  servicePricing     ServicePricing[]
+
+  @@map("service_templates")
+}
+
+// ============================================================
+// SERVICE CHECKLIST TEMPLATES
+// ============================================================
+
+model ServiceChecklistTemplate {
+  id                    String      @id @default(cuid())
+  serviceTemplateId     String      @map("service_template_id")
+  item                  String
+  isRequired            Boolean     @default(true) @map("is_required")
+  priceMode             PricingMode @default(StandardPrice) @map("price_mode")
+  standardPrice         Decimal?    @db.Decimal(12, 2) @map("standard_price")
+  customPrice           Decimal?    @db.Decimal(12, 2) @map("custom_price")
+  currency              String      @default("ZAR")
+  technicianInstruction String?     @map("technician_instruction")
+  sortOrder             Int         @default(0) @map("sort_order")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
+
+  serviceTemplate ServiceTemplate @relation(fields: [serviceTemplateId], references: [id], onDelete: Cascade)
+
+  @@index([serviceTemplateId])
+  @@map("service_checklist_templates")
+}
+
+// ============================================================
+// SERVICE PRICING (Standard/custom price per workshop/currency)
+// ============================================================
+
+model ServicePricing {
+  id                  String      @id @default(cuid())
+  serviceTemplateId   String      @map("service_template_id")
+  workshopId          String?     @map("workshop_id")
+  currency            String      @default("ZAR")
+  standardPrice       Decimal?    @db.Decimal(12, 2) @map("standard_price")
+  customPrice         Decimal?    @db.Decimal(12, 2) @map("custom_price")
+  allowCustomOverride Boolean     @default(true) @map("allow_custom_override")
+  effectiveFrom       DateTime?   @map("effective_from")
+  approvalRequired    String?     @map("approval_required")
+  taxIncluded         Boolean     @default(true) @map("tax_included")
+  isActive            Boolean     @default(true) @map("is_active")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+
+  serviceTemplate ServiceTemplate @relation(fields: [serviceTemplateId], references: [id])
+  workshop        Workshop?       @relation(fields: [workshopId], references: [id])
+
+  @@index([serviceTemplateId])
+  @@index([workshopId])
+  @@map("service_pricing")
+}
+
+// ============================================================
+// INVOICES
+// ============================================================
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique @map("invoice_number")
+  quotationId   String        @unique @map("quotation_id")
+  jobCardId     String?       @unique @map("job_card_id")
+  issueDate     DateTime      @default(now()) @map("issue_date")
+  dueDate       DateTime?     @map("due_date")
+  subtotal      Decimal       @db.Decimal(12, 2)
+  tax           Decimal?      @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
+  currency      String        @default("ZAR")
+  paymentStatus        PaymentStatus @default(DueToday) @map("payment_status")
+  clearanceStatus      String?      @map("clearance_status")
+  clearedAt            DateTime?    @map("cleared_at")
+  clearedByUserId      String?      @map("cleared_by_user_id")
+  hasInsurance         Boolean      @default(false) @map("has_insurance")
+  insuranceId          String?      @map("insurance_id")
+  sentToFrontDeskAt    DateTime?    @map("sent_to_front_desk_at")
+  sharedWithCustomerAt DateTime?    @map("shared_with_customer_at")
+  notes                String?
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  quotation  Quotation               @relation(fields: [quotationId], references: [id])
+  jobCard    JobCard?                @relation(fields: [jobCardId], references: [id])
+  lineItems  InvoiceLineItem[]
+  payments   Payment[]
+  insurance  VehicleInsuranceDetails? @relation(fields: [insuranceId], references: [id])
+
+  @@index([paymentStatus])
+  @@index([issueDate])
+  @@map("invoices")
+}
+
+// ============================================================
+// INVOICE LINE ITEMS
+// ============================================================
+
+model InvoiceLineItem {
+  id          String   @id @default(cuid())
+  invoiceId   String   @map("invoice_id")
+  description String
+  qty         Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(12, 2) @map("unit_price")
+  total       Decimal  @db.Decimal(12, 2)
+  currency    String   @default("ZAR")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_line_items")
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+
+model Payment {
+  id               String        @id @default(cuid())
+  paymentCode          String        @unique @map("payment_code")
+  invoiceId            String        @map("invoice_id")
+  method               PaymentMethod
+  amountReceived       Decimal       @db.Decimal(12, 2) @map("amount_received")
+  currency             String        @default("ZAR")
+  referenceNumber      String?       @map("reference_number")
+  gatewayStatus        String?       @map("gateway_status")
+  payerType            String?       @map("payer_type")
+  insuranceProvider    String?       @map("insurance_provider")
+  claimNumber          String?       @map("claim_number")
+  insuranceContactName String?       @map("insurance_contact_name")
+  notes                String?
+  status               PaymentStatus @default(DueToday)
+  recordedByUserId     String?       @map("recorded_by_user_id")
+  paidAt               DateTime?     @map("paid_at")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  invoice    Invoice @relation(fields: [invoiceId], references: [id])
+  recordedBy User?   @relation(fields: [recordedByUserId], references: [id])
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([method])
+  @@map("payments")
+}
+
+// ============================================================
+// NOTIFICATIONS (WhatsApp / Email / SMS logs)
+// ============================================================
+
+model Notification {
+  id            String              @id @default(cuid())
+  workshopId    String?             @map("workshop_id")
+  customerId    String?             @map("customer_id")
+  userId        String?             @map("user_id")
+  jobCardId     String?             @map("job_card_id")
+  quotationId   String?             @map("quotation_id")
+  channel       NotificationChannel
+  type          String
+  message       String
+  status        NotificationStatus  @default(Pending)
+  sentAt        DateTime?           @map("sent_at")
+  failureReason String?             @map("failure_reason")
+  createdAt     DateTime            @default(now()) @map("created_at")
+
+  workshop  Workshop?  @relation(fields: [workshopId], references: [id])
+  customer  Customer?  @relation(fields: [customerId], references: [id])
+  sentBy    User?      @relation(fields: [userId], references: [id])
+
+  @@index([customerId])
+  @@index([workshopId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================================
+// COUNTRIES & STATES (Reference data)
+// ============================================================
+
+model Country {
+  id             String  @id @default(cuid())
+  name           String  @unique
+  iso2           String  @unique @map("iso2")
+  iso3           String? @map("iso3")
+  isdCode        String  @map("isd_code")
+  currencyName   String? @map("currency_name")
+  currencyCode   String? @map("currency_code")
+  currencySymbol String? @map("currency_symbol")
+  isActive       Boolean @default(true) @map("is_active")
+
+  states State[]
+
+  @@index([iso2])
+  @@index([currencyCode])
+  @@map("countries")
+}
+
+model State {
+  id        String  @id @default(cuid())
+  countryId String  @map("country_id")
+  name      String
+  code      String?
+
+  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@unique([countryId, name])
+  @@index([countryId])
+  @@map("states")
+}
+
+// ============================================================
+// CLIENT DRAFTS (Onboarding drafts — saved in DB, multiple per admin)
+// ============================================================
+
+model ClientDraft {
+  id                String          @id @default(cuid())
+  enterpriseAdminId String          @map("enterprise_admin_id")
+  draftName         String          @default("Untitled draft") @map("draft_name")
+  data              Json
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  enterpriseAdmin EnterpriseAdmin @relation(fields: [enterpriseAdminId], references: [id], onDelete: Cascade)
+
+  @@index([enterpriseAdminId])
+  @@map("client_drafts")
+}
+
+// ============================================================
+// PASSWORD RESET TOKENS
+// ============================================================
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String?   @map("user_id")
+  adminId   String?   @map("admin_id")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user  User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  admin EnterpriseAdmin? @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([adminId])
+  @@map("password_reset_tokens")
+}
+
+// ============================================================
+// WORKSHOP ROLE USER COUNTS (Required user slots per role per workshop)
+// ============================================================
+
+model WorkshopRoleUserCount {
+  id            String   @id @default(cuid())
+  clientId      String   @map("client_id")
+  workshopId    String   @map("workshop_id")
+  roleId        String   @map("role_id")
+  roleCode      String   @map("role_code")
+  requiredCount Int      @default(0) @map("required_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  client   Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  role     Role     @relation(fields: [roleId], references: [id])
+
+  @@unique([workshopId, roleId])
+  @@index([clientId])
+  @@index([workshopId])
+  @@index([roleId])
+  @@map("workshop_role_user_counts")
+}
+
+// ============================================================
+// FAILED COMPONENTS (Technician marks components as failed)
+// ============================================================
+
+model FailedComponent {
+  id                        String   @id @default(cuid())
+  workshopId                String   @map("workshop_id")
+  jobCardId                 String?  @map("job_card_id")
+  quotationId               String?  @map("quotation_id")
+  technicianId              String   @map("technician_id")
+  componentName             String   @map("component_name")
+  failureDescription        String?  @map("failure_description")
+  severity                  String   @default("Medium")
+  replacementRequired       Boolean  @default(true) @map("replacement_required")
+  technicianNotes           String?  @map("technician_notes")
+  technicianCostImpact      Decimal? @db.Decimal(12, 2) @map("technician_cost_impact")
+  currency                  String   @default("ZAR")
+  failedComponentImageUrl   String?  @map("failed_component_image_url")
+  replacedComponentImageUrl String?  @map("replaced_component_image_url")
+  status                    String   @default("PendingReview")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  workshop   Workshop               @relation(fields: [workshopId], references: [id])
+  jobCard    JobCard?               @relation(fields: [jobCardId], references: [id])
+  quotation  Quotation?             @relation(fields: [quotationId], references: [id])
+  technician User                   @relation("TechnicianFailedComponents", fields: [technicianId], references: [id])
+  review     FailedComponentReview?
+
+  @@index([workshopId])
+  @@index([jobCardId])
+  @@index([technicianId])
+  @@index([status])
+  @@map("failed_components")
+}
+
+// ============================================================
+// FAILED COMPONENT REVIEWS (Parts Interpreter reviews)
+// ============================================================
+
+model FailedComponentReview {
+  id                       String    @id @default(cuid())
+  failedComponentId        String    @unique @map("failed_component_id")
+  partsInterpreterId       String    @map("parts_interpreter_id")
+  replacementDecision      String?   @map("replacement_decision")
+  partNumber               String?   @map("part_number")
+  partDescription          String?   @map("part_description")
+  availabilityStatus       String?   @map("availability_status")
+  quantityRequired         Int       @default(1) @map("quantity_required")
+  unitCost                 Decimal?  @db.Decimal(12, 2) @map("unit_cost")
+  totalCost                Decimal?  @db.Decimal(12, 2) @map("total_cost")
+  currency                 String    @default("ZAR")
+  supplierName             String?   @map("supplier_name")
+  supplierContact          String?   @map("supplier_contact")
+  expectedDeliveryDate     DateTime? @map("expected_delivery_date")
+  alternativePartSuggested String?   @map("alternative_part_suggested")
+  alternativePartNumber    String?   @map("alternative_part_number")
+  partsNotes               String?   @map("parts_notes")
+  status                   String    @default("InReview")
+  reviewedAt               DateTime? @map("reviewed_at")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  failedComponent  FailedComponent @relation(fields: [failedComponentId], references: [id], onDelete: Cascade)
+  partsInterpreter User            @relation("PartsInterpreterReviews", fields: [partsInterpreterId], references: [id])
+
+  @@index([failedComponentId])
+  @@index([partsInterpreterId])
+  @@map("failed_component_reviews")
+}
+
+// ============================================================
+// CUSTOMER PORTAL LINKS (Secure tokenized access per job)
+// ============================================================
+
+model CustomerPortalLink {
+  id              String           @id @default(cuid())
+  tokenHash       String           @unique @map("token_hash")
+  workshopId      String           @map("workshop_id")
+  jobCardId       String           @map("job_card_id")
+  status          PortalLinkStatus @default(Active)
+  expiresAt       DateTime?        @map("expires_at")
+  createdByUserId String           @map("created_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  lastAccessedAt  DateTime?        @map("last_accessed_at")
+  accessCount     Int              @default(0) @map("access_count")
+  revokedAt       DateTime?        @map("revoked_at")
+
+  workshop   Workshop @relation(fields: [workshopId], references: [id])
+  jobCard    JobCard  @relation(fields: [jobCardId], references: [id])
+  createdBy  User     @relation(fields: [createdByUserId], references: [id])
+
+  @@index([tokenHash])
+  @@index([jobCardId])
+  @@map("customer_portal_links")
+}
+
+// ============================================================
+// JOB DELIVERY PREFERENCES (Customer selects via portal)
+// ============================================================
+
+model JobDeliveryPreference {
+  id                  String   @id @default(cuid())
+  jobCardId           String   @unique @map("job_card_id")
+  preference          String   @default("COLLECTION_AT_WORKSHOP")
+  deliveryAddress     String?  @map("delivery_address")
+  preferredDate       String?  @map("preferred_date")
+  preferredTimeWindow String?  @map("preferred_time_window")
+  notes               String?
+  selectedVia         String   @default("CUSTOMER_PORTAL") @map("selected_via")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  jobCard JobCard @relation(fields: [jobCardId], references: [id])
+
+  @@index([jobCardId])
+  @@map("job_delivery_preferences")
+}
+
+// ============================================================
+// JOB STATUS HISTORY (Audit trail / timeline for every status change)
+// ============================================================
+
+model JobStatusHistory {
+  id              String    @id @default(cuid())
+  jobCardId       String    @map("job_card_id")
+  workshopId      String    @map("workshop_id")
+  fromStatus      String?   @map("from_status")
+  toStatus        String    @map("to_status")
+  performedByUserId String? @map("performed_by_user_id")
+  performedByName String?   @map("performed_by_name")
+  performedByRole String?   @map("performed_by_role")
+  title           String?
+  notes           String?
+  metadata        Json?
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  jobCard JobCard @relation(fields: [jobCardId], references: [id], onDelete: Cascade)
+
+  @@index([jobCardId])
+  @@index([workshopId])
+  @@index([createdAt])
+  @@map("job_status_history")
+}
+
+// ============================================================
+// JOB COMPLETION REPORTS (Technician completes job with severity)
+// ============================================================
+
+model JobCompletionReport {
+  id                    String    @id @default(cuid())
+  jobCardId             String    @unique @map("job_card_id")
+  workshopId            String    @map("workshop_id")
+  technicianId          String    @map("technician_id")
+  issueSeverity         String    @map("issue_severity")
+  completionNotes       String?   @map("completion_notes")
+  remainingIssues       String?   @map("remaining_issues")
+  customerAdvisoryNotes String?   @map("customer_advisory_notes")
+  completedAt           DateTime  @default(now()) @map("completed_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  jobCard    JobCard @relation(fields: [jobCardId], references: [id], onDelete: Cascade)
+
+  @@index([jobCardId])
+  @@index([workshopId])
+  @@index([technicianId])
+  @@map("job_completion_reports")
+}
+
+// ============================================================
+// JOB ADDITIONAL WORK REQUESTS (Technician requests extra work)
+// ============================================================
+
+model JobAdditionalWorkRequest {
+  id                  String    @id @default(cuid())
+  jobCardId           String    @map("job_card_id")
+  workshopId          String    @map("workshop_id")
+  technicianId        String    @map("technician_id")
+  description         String
+  reason              String?
+  severity            String    @default("Medium")
+  estimatedLabourHours String?  @map("estimated_labour_hours")
+  estimatedPartsCost  Decimal?  @db.Decimal(12, 2) @map("estimated_parts_cost")
+  estimatedTotalCost  Decimal?  @db.Decimal(12, 2) @map("estimated_total_cost")
+  currency            String    @default("ZAR")
+  status              String    @default("SENT_TO_FRONT_DESK") @map("status")
+  quotationId         String?   @map("quotation_id")
+  customerDecision    String?   @map("customer_decision")
+  customerDecidedAt   DateTime? @map("customer_decided_at")
+  frontDeskNotes      String?   @map("front_desk_notes")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  jobCard    JobCard @relation(fields: [jobCardId], references: [id], onDelete: Cascade)
+
+  @@index([jobCardId])
+  @@index([workshopId])
+  @@index([technicianId])
+  @@index([status])
+  @@map("job_additional_work_requests")
+}
+
+// ============================================================
+// REPAIR ITEMS (Core multi-repair workflow)
+// status: Pending | AwaitingTechInput | AwaitingPartsInput | AwaitingControllerInput |
+//         InputsComplete | QuotationBuilt | CustomerApproved | CustomerRejected |
+//         InProgress | Completed | Cancelled | Skipped
+// customerApprovalStatus: Pending | Approved | Rejected | NotRequired
+// ============================================================
+
+model RepairItem {
+  id                          String    @id @default(cuid())
+  workshopId                  String    @map("workshop_id")
+  jobCardId                   String    @map("job_card_id")
+  quotationId                 String?   @map("quotation_id")
+  customerId                  String    @map("customer_id")
+  vehicleId                   String    @map("vehicle_id")
+  title                       String
+  description                 String?
+  category                    String?
+  customerComplaint           String?   @map("customer_complaint")
+  requestedByUserId           String    @map("requested_by_user_id")
+  status                      String    @default("Pending")
+  priority                    String    @default("Amber")
+  requiresTechnicianInput     Boolean   @default(false) @map("requires_technician_input")
+  requiresPartsInput          Boolean   @default(false) @map("requires_parts_input")
+  requiresControllerInput     Boolean   @default(false) @map("requires_controller_input")
+  estimatedDurationMinutes    Int?      @map("estimated_duration_minutes")
+  calculatedDurationMinutes   Int?      @map("calculated_duration_minutes")
+  estimatedStartAt            DateTime? @map("estimated_start_at")
+  estimatedEndAt              DateTime? @map("estimated_end_at")
+  isParallelAllowed           Boolean   @default(true) @map("is_parallel_allowed")
+  sequenceOrder               Int?      @map("sequence_order")
+  customerApprovalStatus      String    @default("Pending") @map("customer_approval_status")
+  approvedByCustomerAt        DateTime? @map("approved_by_customer_at")
+  sentToTechnicianAt          DateTime? @map("sent_to_technician_at")
+  sentToPartsAt               DateTime? @map("sent_to_parts_at")
+  sentToControllerAt          DateTime? @map("sent_to_controller_at")
+  technicianInputSubmittedAt  DateTime? @map("technician_input_submitted_at")
+  partsInputSubmittedAt       DateTime? @map("parts_input_submitted_at")
+  controllerInputSubmittedAt  DateTime? @map("controller_input_submitted_at")
+  notes                       String?
+  sortOrder                   Int       @default(0) @map("sort_order")
+  createdAt                   DateTime  @default(now()) @map("created_at")
+  updatedAt                   DateTime  @updatedAt @map("updated_at")
+  deletedAt                   DateTime? @map("deleted_at")
+
+  workshop      Workshop                @relation(fields: [workshopId], references: [id])
+  jobCard       JobCard                 @relation(fields: [jobCardId], references: [id])
+  quotation     Quotation?              @relation(fields: [quotationId], references: [id])
+  customer      Customer                @relation(fields: [customerId], references: [id])
+  vehicle       Vehicle                 @relation(fields: [vehicleId], references: [id])
+  requestedBy   User                    @relation("RepairItemCreatedBy", fields: [requestedByUserId], references: [id])
+  inputs        RepairItemInput[]
+  partsOptions  RepairItemPartsOption[]
+  timeEstimates RepairItemTimeEstimate[]
+  lineItems     QuotationLineItem[]
+
+  @@index([workshopId])
+  @@index([jobCardId])
+  @@index([customerId])
+  @@index([status])
+  @@map("repair_items")
+}
+
+// ============================================================
+// REPAIR ITEM INPUTS (Per-role input: Technician, Parts, Controller, FrontDesk)
+// status: Draft | Submitted | Returned | Approved
+// roleCode: FRONT_DESK | TECHNICIAN | PARTS_INTERPRETER | WORKSHOP_CONTROLLER
+// ============================================================
+
+model RepairItemInput {
+  id                       String    @id @default(cuid())
+  repairItemId             String    @map("repair_item_id")
+  jobCardId                String    @map("job_card_id")
+  workshopId               String    @map("workshop_id")
+  roleCode                 String    @map("role_code")
+  userId                   String    @map("user_id")
+  notes                    String?
+  diagnosisNotes           String?   @map("diagnosis_notes")
+  labourHours              Decimal?  @db.Decimal(8, 2) @map("labour_hours")
+  labourCost               Decimal?  @db.Decimal(12, 2) @map("labour_cost")
+  currency                 String    @default("ZAR")
+  partsRequired            Boolean   @default(false) @map("parts_required")
+  estimatedDurationMinutes Int?      @map("estimated_duration_minutes")
+  costImpact               Decimal?  @db.Decimal(12, 2) @map("cost_impact")
+  technicianRisk           String?   @map("technician_risk")
+  safetyFlag               Boolean   @default(false) @map("safety_flag")
+  additionalWorkFlag       Boolean   @default(false) @map("additional_work_flag")
+  bayRequired              String?   @map("bay_required")
+  repairRoute              String?   @map("repair_route")
+  canRunInParallel         Boolean   @default(true) @map("can_run_in_parallel")
+  workshopNotes            String?   @map("workshop_notes")
+  status                   String    @default("Draft")
+  submittedAt              DateTime? @map("submitted_at")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  repairItem RepairItem @relation(fields: [repairItemId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@index([repairItemId])
+  @@index([jobCardId])
+  @@index([userId])
+  @@map("repair_item_inputs")
+}
+
+// ============================================================
+// REPAIR ITEM PARTS OPTIONS (Parts Interpreter provides brand/availability options)
+// availabilityStatus: InStock | AvailableNow | OrderRequired | Backordered | NotAvailable
+// ============================================================
+
+model RepairItemPartsOption {
+  id                  String    @id @default(cuid())
+  repairItemId        String    @map("repair_item_id")
+  workshopId          String    @map("workshop_id")
+  partsInterpreterId  String    @map("parts_interpreter_id")
+  partName            String    @map("part_name")
+  brand               String?
+  partNumber          String?   @map("part_number")
+  supplierName        String?   @map("supplier_name")
+  availabilityStatus  String    @map("availability_status")
+  availableQuantity   Int?      @map("available_quantity")
+  leadTimeDays        Int?      @map("lead_time_days")
+  leadTimeHours       Int?      @map("lead_time_hours")
+  unitCost            Decimal   @db.Decimal(12, 2) @map("unit_cost")
+  sellingPrice        Decimal   @db.Decimal(12, 2) @map("selling_price")
+  quantity            Int       @default(1)
+  totalCost           Decimal   @db.Decimal(12, 2) @map("total_cost")
+  currency            String    @default("ZAR")
+  expectedAvailableAt DateTime? @map("expected_available_at")
+  recommended         Boolean   @default(false)
+  selected            Boolean   @default(false)
+  notes               String?
+  submittedToQuote    Boolean   @default(false) @map("submitted_to_quote")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  repairItem       RepairItem @relation(fields: [repairItemId], references: [id], onDelete: Cascade)
+  partsInterpreter User       @relation(fields: [partsInterpreterId], references: [id])
+
+  @@index([repairItemId])
+  @@map("repair_item_parts_options")
+}
+
+// ============================================================
+// REPAIR ITEM TIME ESTIMATES (Duration calculations per repair item)
+// sourceRole: FRONT_DESK | TECHNICIAN | PARTS_INTERPRETER | WORKSHOP_CONTROLLER
+// ============================================================
+
+model RepairItemTimeEstimate {
+  id                       String    @id @default(cuid())
+  repairItemId             String    @map("repair_item_id")
+  workshopId               String    @map("workshop_id")
+  sourceRole               String    @map("source_role")
+  sourceUserId             String    @map("source_user_id")
+  labourDurationMinutes    Int?      @map("labour_duration_minutes")
+  partsLeadTimeMinutes     Int?      @map("parts_lead_time_minutes")
+  totalDurationMinutes     Int       @map("total_duration_minutes")
+  assumptions              String?
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  repairItem RepairItem @relation(fields: [repairItemId], references: [id], onDelete: Cascade)
+  sourceUser User       @relation(fields: [sourceUserId], references: [id])
+
+  @@index([repairItemId])
+  @@map("repair_item_time_estimates")
+}
+
+// ============================================================
+// VEHICLE INSURANCE DETAILS (Per vehicle/job insurance record)
+// status: Active | Expired | ClaimInProgress | Approved | Rejected
+// ============================================================
+
+model VehicleInsuranceDetails {
+  id                    String    @id @default(cuid())
+  workshopId            String    @map("workshop_id")
+  customerId            String    @map("customer_id")
+  vehicleId             String    @map("vehicle_id")
+  jobCardId             String?   @map("job_card_id")
+  providerName          String    @map("provider_name")
+  policyNumber          String    @map("policy_number")
+  claimNumber           String?   @map("claim_number")
+  insuranceContactName  String?   @map("insurance_contact_name")
+  insuranceContactPhone String?   @map("insurance_contact_phone")
+  insuranceContactEmail String?   @map("insurance_contact_email")
+  coverageType          String?   @map("coverage_type")
+  coverageLimit         Decimal?  @db.Decimal(12, 2) @map("coverage_limit")
+  deductibleAmount      Decimal?  @db.Decimal(12, 2) @map("deductible_amount")
+  currency              String    @default("ZAR")
+  expiryDate            DateTime? @map("expiry_date")
+  status                String    @default("Active")
+  notes                 String?
+  createdByUserId       String    @map("created_by_user_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  workshop   Workshop  @relation(fields: [workshopId], references: [id])
+  customer   Customer  @relation(fields: [customerId], references: [id])
+  vehicle    Vehicle   @relation(fields: [vehicleId], references: [id])
+  jobCard    JobCard?  @relation(fields: [jobCardId], references: [id])
+  createdBy  User      @relation(fields: [createdByUserId], references: [id])
+  invoices   Invoice[]
+
+  @@index([workshopId])
+  @@index([vehicleId])
+  @@index([customerId])
+  @@map("vehicle_insurance_details")
+}

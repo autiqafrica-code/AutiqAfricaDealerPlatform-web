@@ -1,0 +1,19 @@
+{
+  "name": "autiq-africa-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Autiq Africa Dealer & Workshop Platform — monorepo coordinator",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "setup": "npm install --prefix frontend && npm install --prefix backend && npm run db:generate --prefix backend && npm run db:seed --prefix backend",
+    "dev": "concurrently --names \"FRONTEND,BACKEND\" --prefix-colors \"cyan,green\" \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "build:frontend": "npm run build --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

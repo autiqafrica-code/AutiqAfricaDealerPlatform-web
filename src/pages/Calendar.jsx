@@ -1,0 +1,2 @@
+const days = ['Mon','Tue','Wed','Thu','Fri','Sat']
+export default function Calendar() { return <div className="pageStack"><section className="panel"><div className="sectionHead"><h2>Appointment capacity</h2><div><label>Daily limit </label><input className="smallInput" defaultValue="30" /></div></div><div className="calendarGrid">{days.map((d,i)=>{const count=[22,28,34,19,31,14][i];return <div className={`dayBox ${count>30?'overLimit':''}`} key={d}><strong>{d}</strong><h2>{count}</h2><p>{count>30?'Limit exceeded':'Jobs booked'}</p></div>})}</div></section></div> }
