@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronRight,
-  FileText, Package, Save, Send, Upload, Wrench, X,
+  FileText, Package, RefreshCw, Save, Send, Upload, Wrench, X,
 } from 'lucide-react'
 import { apiFetch, getToken, getUser } from '../../utils/api'
 import QuotationReviewPanel from '../../components/QuotationReviewPanel'
 
-const TABS = ['Dashboard', 'Quotation Requests', 'Part Replacement', 'Jobs Waiting']
+const TABS = ['Dashboard', 'My Assigned Jobs', 'Quotation Requests', 'Part Replacement', 'Jobs Waiting']
 
 const DECISIONS = [
   'Replacement Approved',
@@ -62,6 +62,13 @@ export default function Parts() {
   const [waitingJobs,    setWaitingJobs]    = useState([])
   const [loadingWaiting, setLoadingWaiting] = useState(false)
 
+  // My Assigned Jobs
+  const [myJobs,          setMyJobs]          = useState([])
+  const [loadingMyJobs,   setLoadingMyJobs]   = useState(false)
+  const [selectedMyJob,   setSelectedMyJob]   = useState(null)
+  const [statusNotes,     setStatusNotes]     = useState('')
+  const [statusBusy,      setStatusBusy]      = useState(false)
+
   // Feedback
   const [message, setMessage] = useState('')
   const [msgType, setMsgType] = useState('success')
@@ -71,6 +78,7 @@ export default function Parts() {
     if (tab === 'Quotation Requests') loadQuotations()
     if (tab === 'Part Replacement')   loadComponents()
     if (tab === 'Jobs Waiting')       loadWaitingJobs()
+    if (tab === 'My Assigned Jobs')   loadMyJobs()
   }, [tab])
 
   async function loadDashboard() {
@@ -115,6 +123,33 @@ export default function Parts() {
       if (data.success) setWaitingJobs(data.data.data || [])
     } catch { /* ignore */ }
     finally { setLoadingWaiting(false) }
+  }
+
+  async function loadMyJobs() {
+    setLoadingMyJobs(true)
+    try {
+      const res  = await apiFetch('/jobs?myPartsJobs=true&limit=50')
+      const data = await res.json()
+      if (data.success) setMyJobs(data.data?.data || [])
+    } catch { /* ignore */ }
+    finally { setLoadingMyJobs(false) }
+  }
+
+  async function updateMyJobStatus(jobId, status) {
+    setStatusBusy(true); setMessage('')
+    try {
+      const res  = await apiFetch(`/jobs/${jobId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, notes: statusNotes || undefined }),
+      })
+      const data = await res.json()
+      if (!data.success) { setMsgType('error'); setMessage(data.message || 'Failed'); return }
+      setMyJobs(p => p.map(j => j.id === jobId ? { ...j, status } : j))
+      if (selectedMyJob?.id === jobId) setSelectedMyJob(p => ({ ...p, status }))
+      setMsgType('success'); setMessage(`Job marked as ${status}.`)
+      setStatusNotes('')
+    } catch { setMsgType('error'); setMessage('Network error') }
+    finally { setStatusBusy(false) }
   }
 
   async function openComponent(id) {
@@ -283,6 +318,107 @@ export default function Parts() {
             </div>
           </section>
         </>
+      )}
+
+      {/* ─── MY ASSIGNED JOBS TAB ──────────────────────────────── */}
+      {tab === 'My Assigned Jobs' && (
+        <section className="panel">
+          <div className="sectionHeader compact">
+            <div>
+              <p className="eyebrow">Assigned to me</p>
+              <h3>Jobs assigned to you as Parts Interpreter</h3>
+              <p>Start work, flag waiting for parts, and mark ready once done.</p>
+            </div>
+            <button className="softBtn" onClick={loadMyJobs}><RefreshCw size={14} /> Refresh</button>
+          </div>
+
+          {loadingMyJobs ? (
+            <p style={{ textAlign: 'center', padding: 20, color: 'var(--muted)' }}>Loading…</p>
+          ) : myJobs.length === 0 ? (
+            <div className="infoStrip">No jobs are currently assigned to you.</div>
+          ) : (
+            <>
+              <div className="tableWrap">
+                <table>
+                  <thead>
+                    <tr><th>Job #</th><th>Customer</th><th>Vehicle</th><th>Repair</th><th>Status</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {myJobs.map(j => (
+                      <tr key={j.id} style={{ background: selectedMyJob?.id === j.id ? '#f0f9ff' : undefined }}>
+                        <td><strong>{j.jobNumber}</strong></td>
+                        <td>{j.quotation?.customer?.name}</td>
+                        <td>{j.vehicle?.registrationNo}</td>
+                        <td>{j.quotation?.repairType}</td>
+                        <td>
+                          <span className={`pill ${j.status === 'InProgress' ? 'blue' : j.status === 'Ready' ? 'green' : j.status === 'WaitingParts' ? 'amber' : 'amber'}`}>
+                            {j.status}
+                          </span>
+                        </td>
+                        <td>
+                          <button className="softBtn" onClick={() => { setSelectedMyJob(j); setStatusNotes('') }}>
+                            <ChevronRight size={14} /> Manage
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {selectedMyJob && (
+                <div style={{ marginTop: 20, background: '#f9fafb', borderRadius: 12, padding: 16, border: '1px solid #e4e7ec' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                    <div>
+                      <h4 style={{ margin: 0 }}>{selectedMyJob.jobNumber}</h4>
+                      <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>
+                        {selectedMyJob.quotation?.customer?.name}
+                        {selectedMyJob.vehicle?.registrationNo ? ` · ${selectedMyJob.vehicle.registrationNo}` : ''}
+                        {selectedMyJob.quotation?.repairType ? ` — ${selectedMyJob.quotation.repairType}` : ''}
+                      </p>
+                      <span className={`pill ${selectedMyJob.status === 'InProgress' ? 'blue' : selectedMyJob.status === 'Ready' ? 'green' : 'amber'}`} style={{ marginTop: 4, display: 'inline-block' }}>
+                        {selectedMyJob.status}
+                      </span>
+                    </div>
+                    <button className="softBtn" onClick={() => setSelectedMyJob(null)}><X size={14} /> Close</button>
+                  </div>
+
+                  <label style={{ display: 'block', marginBottom: 10 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>Notes for this status change</span>
+                    <textarea
+                      value={statusNotes}
+                      onChange={e => setStatusNotes(e.target.value)}
+                      placeholder="Describe what you did, parts needed, or completion details…"
+                      rows={3}
+                      style={{ display: 'block', width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 8, border: '1px solid #d0d5dd', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }}
+                    />
+                  </label>
+
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {['Accepted', 'New', 'AssignedToTechnician'].includes(selectedMyJob.status) && (
+                      <button className="primaryBtn" onClick={() => updateMyJobStatus(selectedMyJob.id, 'InProgress')}
+                        disabled={statusBusy} style={{ background: '#175cd3' }}>
+                        Start — Mark In Progress
+                      </button>
+                    )}
+                    {selectedMyJob.status === 'InProgress' && (
+                      <button className="softBtn" onClick={() => updateMyJobStatus(selectedMyJob.id, 'WaitingParts')}
+                        disabled={statusBusy} style={{ borderColor: '#f79009', color: '#b54708' }}>
+                        Waiting for Parts
+                      </button>
+                    )}
+                    {['InProgress', 'WaitingParts'].includes(selectedMyJob.status) && (
+                      <button className="primaryBtn" onClick={() => updateMyJobStatus(selectedMyJob.id, 'Ready')}
+                        disabled={statusBusy} style={{ background: '#039855' }}>
+                        Mark as Ready
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </section>
       )}
 
       {/* ─── QUOTATION REQUESTS TAB ─────────────────────────────── */}

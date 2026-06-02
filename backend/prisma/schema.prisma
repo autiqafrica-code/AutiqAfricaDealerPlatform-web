@@ -461,9 +461,10 @@ model User {
   assignedAsQuoteController     Quotation[]  @relation("QuotationAssignedController")
   assignedAsQuotePartsInterpreter Quotation[] @relation("QuotationAssignedPartsInterpreter")
   quotationUpdates    QuotationUpdate[]
-  assignedJobCards    JobCard[]           @relation("JobAssignedTechnician")
-  controlledJobCards  JobCard[]           @relation("JobAssignedController")
-  qcApprovedJobs      JobCard[]           @relation("JobQCApprovedBy")
+  assignedJobCards         JobCard[]           @relation("JobAssignedTechnician")
+  controlledJobCards       JobCard[]           @relation("JobAssignedController")
+  partsInterpreterJobCards JobCard[]           @relation("JobAssignedPartsInterpreter")
+  qcApprovedJobs           JobCard[]           @relation("JobQCApprovedBy")
   recordedPayments    Payment[]
   sentNotifications   Notification[]
   failedComponents    FailedComponent[]       @relation("TechnicianFailedComponents")
@@ -831,7 +832,8 @@ model JobCard {
   vehicleId                String?     @map("vehicle_id")
   assignedControllerId     String?     @map("assigned_controller_id")
   assignedTechnicianId     String?     @map("assigned_technician_id")
-  notifyPartsInterpreterId String?     @map("notify_parts_interpreter_id")
+  notifyPartsInterpreterId       String?     @map("notify_parts_interpreter_id")
+  assignedPartsInterpreterId     String?     @map("assigned_parts_interpreter_id")
   department               String?
   priority                 JobPriority @default(Amber)
   status                   JobStatus   @default(New)
@@ -854,9 +856,10 @@ model JobCard {
   workshop           Workshop           @relation(fields: [workshopId], references: [id])
   quotation          Quotation          @relation(fields: [quotationId], references: [id])
   vehicle            Vehicle?           @relation(fields: [vehicleId], references: [id])
-  assignedTechnician User?              @relation("JobAssignedTechnician", fields: [assignedTechnicianId], references: [id])
-  assignedController User?              @relation("JobAssignedController", fields: [assignedControllerId], references: [id])
-  qcApprovedBy       User?              @relation("JobQCApprovedBy", fields: [qcApprovedByUserId], references: [id])
+  assignedTechnician        User?              @relation("JobAssignedTechnician", fields: [assignedTechnicianId], references: [id])
+  assignedController        User?              @relation("JobAssignedController", fields: [assignedControllerId], references: [id])
+  assignedPartsInterpreter  User?              @relation("JobAssignedPartsInterpreter", fields: [assignedPartsInterpreterId], references: [id])
+  qcApprovedBy              User?              @relation("JobQCApprovedBy", fields: [qcApprovedByUserId], references: [id])
   checklistItems         JobChecklistItem[]
   issues                 JobIssue[]
   media                  JobMedia[]
@@ -874,6 +877,7 @@ model JobCard {
   @@index([status])
   @@index([priority])
   @@index([assignedTechnicianId])
+  @@index([assignedPartsInterpreterId])
   @@map("job_cards")
 }
 

@@ -34,6 +34,7 @@ async function listJobs(req, res, next) {
     if (priority)                                where.priority             = priority
     if (req.query.myJobs           === 'true')   where.assignedTechnicianId = req.user.id
     if (req.query.myControllerJobs === 'true')   where.assignedControllerId = req.user.id
+    if (req.query.myPartsJobs      === 'true')   where.assignedPartsInterpreterId = req.user.id
 
     const [jobs, total] = await Promise.all([
       prisma.jobCard.findMany({
@@ -52,8 +53,9 @@ async function listJobs(req, res, next) {
             },
           },
           vehicle:            { select: { id: true, registrationNo: true, makeModel: true } },
-          assignedTechnician: { select: { id: true, name: true } },
-          assignedController: { select: { id: true, name: true } },
+          assignedTechnician:       { select: { id: true, name: true } },
+          assignedController:       { select: { id: true, name: true } },
+          assignedPartsInterpreter: { select: { id: true, name: true } },
         },
       }),
       prisma.jobCard.count({ where }),
@@ -126,9 +128,10 @@ async function getJob(req, res, next) {
           include: { customer: true, vehicle: true, lineItems: true },
         },
         vehicle:            true,
-        assignedTechnician: { select: { id: true, name: true, role: true } },
-        assignedController: { select: { id: true, name: true, role: true } },
-        checklistItems:     { orderBy: { createdAt: 'asc' } },
+        assignedTechnician:       { select: { id: true, name: true, role: true } },
+        assignedController:       { select: { id: true, name: true, role: true } },
+        assignedPartsInterpreter: { select: { id: true, name: true, role: true } },
+        checklistItems:           { orderBy: { createdAt: 'asc' } },
         issues:             { orderBy: { createdAt: 'desc' } },
         media:              { orderBy: { createdAt: 'desc' } },
       },
@@ -225,14 +228,28 @@ async function updateJobProgress(req, res, next) {
 
 async function assignTechnician(req, res, next) {
   try {
-    const { workshopId } = req.user
+    const { workshopId, id: userId, name: userName, roleCode } = req.user
     const { id } = req.params
-    const { technicianId } = req.body
+    const { technicianId, notes } = req.body
+
+    if (!technicianId) return badRequest(res, 'Technician ID is required')
 
     const existing = await prisma.jobCard.findFirst({ where: { id, workshopId, deletedAt: null } })
     if (!existing) return notFound(res, 'Job not found')
 
-    const job = await prisma.jobCard.update({ where: { id }, data: { assignedTechnicianId: technicianId } })
+    const technician = await prisma.user.findFirst({ where: { id: technicianId, workshopId, deletedAt: null } })
+    if (!technician) return notFound(res, 'Technician not found in this workshop')
+
+    const job = await prisma.jobCard.update({
+      where: { id },
+      data: { assignedTechnicianId: technicianId, status: 'Accepted' },
+    })
+
+    await recordHistory(id, workshopId, existing.status, 'Accepted',
+      { id: userId, name: userName, roleCode },
+      `Technician assigned: ${technician.name}`,
+      notes || null)
+
     return success(res, { job }, 'Technician assigned')
   } catch (err) {
     next(err)
@@ -241,15 +258,60 @@ async function assignTechnician(req, res, next) {
 
 async function assignController(req, res, next) {
   try {
-    const { workshopId } = req.user
+    const { workshopId, id: userId, name: userName, roleCode } = req.user
     const { id } = req.params
-    const { controllerId } = req.body
+    const { controllerId, notes } = req.body
+
+    if (!controllerId) return badRequest(res, 'Controller ID is required')
 
     const existing = await prisma.jobCard.findFirst({ where: { id, workshopId, deletedAt: null } })
     if (!existing) return notFound(res, 'Job not found')
 
-    const job = await prisma.jobCard.update({ where: { id }, data: { assignedControllerId: controllerId } })
+    const controller = await prisma.user.findFirst({ where: { id: controllerId, workshopId, deletedAt: null } })
+    if (!controller) return notFound(res, 'Workshop Controller not found in this workshop')
+
+    const job = await prisma.jobCard.update({
+      where: { id },
+      data: { assignedControllerId: controllerId, sentToControllerAt: new Date() },
+    })
+
+    await recordHistory(id, workshopId, existing.status, existing.status,
+      { id: userId, name: userName, roleCode },
+      `Workshop Controller assigned: ${controller.name}`,
+      notes || null)
+
     return success(res, { job }, 'Controller assigned')
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function assignPartsInterpreter(req, res, next) {
+  try {
+    const { workshopId, id: userId, name: userName, roleCode } = req.user
+    const { id } = req.params
+    const { partsInterpreterId, notes } = req.body
+
+    if (!partsInterpreterId) return badRequest(res, 'Parts Interpreter ID is required')
+
+    const existing = await prisma.jobCard.findFirst({ where: { id, workshopId, deletedAt: null } })
+    if (!existing) return notFound(res, 'Job not found')
+
+    const pi = await prisma.user.findFirst({ where: { id: partsInterpreterId, workshopId, deletedAt: null } })
+    if (!pi) return notFound(res, 'Parts Interpreter not found in this workshop')
+
+    const newStatus = existing.status === 'Accepted' ? 'Accepted' : 'Accepted'
+    const job = await prisma.jobCard.update({
+      where: { id },
+      data: { assignedPartsInterpreterId: partsInterpreterId, status: 'Accepted' },
+    })
+
+    await recordHistory(id, workshopId, existing.status, 'Accepted',
+      { id: userId, name: userName, roleCode },
+      `Parts Interpreter assigned: ${pi.name}`,
+      notes || null)
+
+    return success(res, { job }, 'Parts Interpreter assigned')
   } catch (err) {
     next(err)
   }
@@ -457,7 +519,7 @@ async function notifyCustomer(req, res, next) {
 
 module.exports = {
   listJobs, createJob, getJob, updateJob, updateJobStatus, updateJobProgress,
-  assignTechnician, assignController, qcApprove,
+  assignTechnician, assignController, assignPartsInterpreter, qcApprove,
   getChecklist, updateChecklist,
   listIssues, raiseIssue, resolveIssue,
   uploadMedia, notifyCustomer,

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   AlertCircle, AlertTriangle, BarChart2, CalendarDays, CheckCircle2,
-  ChevronLeft, ChevronRight, ClipboardList, Clock, RefreshCw,
-  ShieldCheck, Users, Wrench, X,
+  ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Menu,
+  RefreshCw, Search, ShieldCheck, Users, Wrench, X,
 } from 'lucide-react'
 import { apiFetch, getToken } from '../../utils/api'
 
@@ -74,8 +74,9 @@ function roleLabel(r) {
   return m[r] || r
 }
 
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const DAY_NAMES  = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTH_ABBR = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 
 function getMondayOfWeek(date) {
   const d = new Date(date)
@@ -247,11 +248,50 @@ function CalendarTab() {
   useEffect(() => { load() }, [load])
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(monday, i))
+  const weekEnd  = addDays(monday, 6)
+  const todayStr = toIsoDate(new Date())
+
+  const weekLabel = (() => {
+    const s = `${MONTH_ABBR[monday.getMonth()]} ${monday.getDate()}`
+    const e = monday.getMonth() === weekEnd.getMonth()
+      ? String(weekEnd.getDate())
+      : `${MONTH_ABBR[weekEnd.getMonth()]} ${weekEnd.getDate()}`
+    return `${s} – ${e}`
+  })()
 
   return (
     <div className="pageStack">
       <section className="panel">
-        <div className="sectionHead managerCalendarHead">
+
+        {/* ── Mobile header (≤680px only) ──────────────────────────────── */}
+        <div className="mobileCalendarHeader">
+          <button className="mobileCalMenuBtn" type="button" aria-label="Menu"><Menu size={22} /></button>
+          <button className="mobileCalMonth" type="button">
+            <span>{MONTHS[monday.getMonth()]} {monday.getFullYear()}</span>
+            <ChevronDown size={16} />
+          </button>
+          <div className="mobileCalHeaderRight">
+            <button type="button" aria-label="Search"><Search size={22} /></button>
+            <div className="mobileCalDateBadge">{new Date().getDate()}</div>
+            <div className="mobileCalAvatar">M</div>
+          </div>
+        </div>
+
+        {/* ── Mobile week navigation (≤680px only) ─────────────────────── */}
+        <div className="mgrMobileCalNav">
+          <button className="softBtn" type="button" onClick={() => setMonday(m => addDays(m, -7))}>
+            <ChevronLeft size={15} /> Prev
+          </button>
+          <button className="softBtn" type="button" onClick={() => setMonday(getMondayOfWeek(new Date()))}>
+            Today
+          </button>
+          <button className="softBtn" type="button" onClick={() => setMonday(m => addDays(m, 7))}>
+            Next <ChevronRight size={15} />
+          </button>
+        </div>
+
+        {/* ── Desktop header (hidden ≤680px) ───────────────────────────── */}
+        <div className="sectionHead managerCalendarHead desktopCalHead">
           <div>
             <p className="eyebrow">Manager calendar</p>
             <h2>Workshop appointments and daily capacity</h2>
@@ -270,8 +310,9 @@ function CalendarTab() {
           </div>
         </div>
 
+        {/* ── Desktop summary chips (hidden ≤680px) ────────────────────── */}
         {data && (
-          <div className="managerCalendarSummary">
+          <div className="managerCalendarSummary mgrDesktopOnly">
             <div><CalendarDays size={19} /><span>Week of {fmtDate(startStr)}</span></div>
             <div><Clock size={19} /><span>Workshop hours: {data.openingTime} – {data.closingTime}</span></div>
             <div><Wrench size={19} /><span>Daily limit: {data.dailyJobLimit} jobs</span></div>
@@ -282,59 +323,101 @@ function CalendarTab() {
         {err && <Err text={err} />}
 
         {!loading && !err && data && (
-          <div className="managerCalendarGrid">
-            {weekDays.map((day, idx) => {
-              const key   = toIsoDate(day)
-              const appts = data.grouped?.[key] || []
-              const jobs  = data.jobCountMap?.[key] ?? 0
-              const limit = data.dailyJobLimit || 30
-              const over  = jobs > limit
-              const near  = !over && jobs >= limit * 0.85
+          <>
+            {/* ── Desktop grid (hidden ≤680px) ─────────────────────────── */}
+            <div className="managerCalendarGrid mgrDesktopGrid">
+              {weekDays.map((day, idx) => {
+                const key   = toIsoDate(day)
+                const appts = data.grouped?.[key] || []
+                const jobs  = data.jobCountMap?.[key] ?? 0
+                const limit = data.dailyJobLimit || 30
+                const over  = jobs > limit
+                const near  = !over && jobs >= limit * 0.85
 
-              return (
-                <article className={`managerDayCard ${over ? 'overLimit' : ''}`} key={key}>
-                  <div className="managerDayTop">
-                    <div>
-                      <strong>{DAY_NAMES[idx]}</strong>
-                      <span>{day.getDate()} {MONTHS[day.getMonth()]}</span>
+                return (
+                  <article className={`managerDayCard ${over ? 'overLimit' : ''}`} key={key}>
+                    <div className="managerDayTop">
+                      <div>
+                        <strong>{DAY_NAMES[idx]}</strong>
+                        <span>{day.getDate()} {MONTHS[day.getMonth()]}</span>
+                      </div>
+                      <span className={`pill ${over ? 'red' : near ? 'amber' : 'green'}`}>
+                        {jobs}/{limit}
+                      </span>
                     </div>
-                    <span className={`pill ${over ? 'red' : near ? 'amber' : 'green'}`}>
-                      {jobs}/{limit}
-                    </span>
-                  </div>
 
-                  <div className="capacityTrack">
-                    <span style={{ width: `${Math.min((jobs / limit) * 100, 100)}%`,
-                      background: over ? '#ef4444' : near ? '#f59e0b' : '#22c55e' }} />
-                  </div>
+                    <div className="capacityTrack">
+                      <span style={{ width: `${Math.min((jobs / limit) * 100, 100)}%`,
+                        background: over ? '#ef4444' : near ? '#f59e0b' : '#22c55e' }} />
+                    </div>
 
-                  <p className="capacityText">
-                    {over ? 'Capacity exceeded.' : near ? 'Near daily limit.' : 'Within capacity.'}
-                  </p>
+                    <p className="capacityText">
+                      {over ? 'Capacity exceeded.' : near ? 'Near daily limit.' : 'Within capacity.'}
+                    </p>
 
-                  {appts.length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No appointments</p>
-                  ) : (
-                    <div className="appointmentList">
-                      {appts.map(a => (
-                        <div className="appointmentItem" key={a.id}
-                          style={{ cursor: 'pointer' }} onClick={() => setSelected(a)}>
-                          <strong>{a.appointmentTime}</strong>
-                          <div>
-                            <span>{a.customer?.name}</span>
-                            <small>{a.vehicle?.makeModel} • {a.serviceType}</small>
+                    {appts.length === 0 ? (
+                      <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No appointments</p>
+                    ) : (
+                      <div className="appointmentList">
+                        {appts.map(a => (
+                          <div className="appointmentItem" key={a.id}
+                            style={{ cursor: 'pointer' }} onClick={() => setSelected(a)}>
+                            <strong>{a.appointmentTime}</strong>
+                            <div>
+                              <span>{a.customer?.name}</span>
+                              <small>{a.vehicle?.makeModel} • {a.serviceType}</small>
+                            </div>
+                            <em className={`pill ${statusClass(a.status)}`} style={{ fontSize: 11 }}>
+                              {statusLabel(a.status)}
+                            </em>
                           </div>
-                          <em className={`pill ${statusClass(a.status)}`} style={{ fontSize: 11 }}>
-                            {statusLabel(a.status)}
-                          </em>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                )
+              })}
+            </div>
+
+            {/* ── Mobile schedule / agenda view (≤680px only) ──────────── */}
+            <div className="mgrMobileSchedule">
+              <div className="scheduleWeekHeader">{weekLabel}</div>
+              {weekDays.map((day, idx) => {
+                const key   = toIsoDate(day)
+                const appts = data.grouped?.[key] || []
+                const jobs  = data.jobCountMap?.[key] ?? 0
+                const limit = data.dailyJobLimit || 30
+                const over  = jobs > limit
+                const near  = !over && jobs >= limit * 0.85
+                const isToday = key === todayStr
+
+                return (
+                  <div key={key} className="scheduleDayRow">
+                    <div className="scheduleDayLabel">
+                      <span className="scheduleDayName">{DAY_NAMES[idx]}</span>
+                      <span className={`scheduleDayNum${isToday ? ' scheduleToday' : ''}`}>
+                        {day.getDate()}
+                      </span>
+                      <span className={`mgrCapBadge ${over ? 'red' : near ? 'amber' : 'green'}`}>
+                        {jobs}/{limit}
+                      </span>
                     </div>
-                  )}
-                </article>
-              )
-            })}
-          </div>
+                    <div className="scheduleDayEvents">
+                      {appts.length > 0
+                        ? appts.map(a => (
+                            <div key={a.id} className="scheduleEventCard" onClick={() => setSelected(a)}>
+                              <span>{a.customer?.name || 'Appointment'}</span>
+                              <small>{a.appointmentTime}</small>
+                            </div>
+                          ))
+                        : <span className="scheduleNothingPlanned">No appointments</span>
+                      }
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
         )}
       </section>
 

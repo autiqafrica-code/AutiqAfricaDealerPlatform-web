@@ -1,14 +1,11 @@
 -- Migrate any existing PartsController users to WorkshopController
--- NOTE: Do not update "roleId" because this database table does not have that column.
 UPDATE "users"
 SET role = 'WorkshopController'
 WHERE role = 'PartsController';
 
 -- Remove workshop_role_user_counts for PARTS_CONTROLLER
 DELETE FROM "workshop_role_user_counts"
-WHERE role_id IN (
-  SELECT id FROM "roles" WHERE code = 'PARTS_CONTROLLER'
-);
+WHERE role_id IN (SELECT id FROM "roles" WHERE code = 'PARTS_CONTROLLER');
 
 -- Remove PARTS_CONTROLLER from roles table
 DELETE FROM "roles"

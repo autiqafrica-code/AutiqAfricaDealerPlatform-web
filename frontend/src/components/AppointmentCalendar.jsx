@@ -1,10 +1,32 @@
 import { useMemo, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, Lock, Plus, Save, Users } from 'lucide-react'
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clock, Lock, Menu, Plus, Save, Search, Users } from 'lucide-react'
 
 const DEFAULT_SCHEDULE = { dailyJobLimit: 30, openingTime: '10:00', closingTime: '20:00' }
 
-const viewOptions = ['Month', 'Week', 'Day']
+const viewOptions = ['Month', 'Week', 'Day', 'Schedule']
 const weekDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const MONTH_ABBR  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+const DAY_ABBR    = ['SUN','MON','TUE','WED','THU','FRI','SAT']
+const MONTH_GRADIENTS = [
+  'linear-gradient(160deg,#4facfe 0%,#00f2fe 100%)',
+  'linear-gradient(160deg,#fd79a8 0%,#fdcb6e 100%)',
+  'linear-gradient(160deg,#55efc4 0%,#00b894 100%)',
+  'linear-gradient(160deg,#a29bfe 0%,#fd79a8 100%)',
+  'linear-gradient(160deg,#fd79a8 0%,#fedb37 100%)',
+  'linear-gradient(160deg,#f093fb 0%,#f5576c 100%)',
+  'linear-gradient(160deg,#4facfe 0%,#43e97b 100%)',
+  'linear-gradient(160deg,#f7971e 0%,#ffd200 100%)',
+  'linear-gradient(160deg,#ff6a00 0%,#ee0979 100%)',
+  'linear-gradient(160deg,#f7971e 0%,#ee0979 100%)',
+  'linear-gradient(160deg,#373b44 0%,#4286f4 100%)',
+  'linear-gradient(160deg,#4facfe 0%,#a29bfe 100%)',
+]
+
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function toMinutes(time) {
   const [hour, minute] = time.split(':').map(Number)
@@ -22,6 +44,14 @@ function statusClass(status) {
   if (status === 'WaitingApproval') return 'amber'
   if (status === 'Cancelled')       return 'red'
   return 'soft'
+}
+
+function formatWeekLabel(start, end) {
+  const s = `${MONTH_ABBR[start.getMonth()]} ${start.getDate()}`
+  const e = start.getMonth() === end.getMonth()
+    ? String(end.getDate())
+    : `${MONTH_ABBR[end.getMonth()]} ${end.getDate()}`
+  return `${s} – ${e}`
 }
 
 /**
@@ -54,7 +84,9 @@ export default function AppointmentCalendar({
   const schedule = settings || DEFAULT_SCHEDULE
   const appts    = bookings || []
 
-  const [view,            setView]            = useState('Week')
+  const [view,            setView]            = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 680 ? 'Schedule' : 'Week'
+  )
   const [activeDate,      setActiveDate]      = useState(() => new Date().getDate())
   const [showBookingForm, setShowBookingForm] = useState(false)
   const [dailyLimit,      setDailyLimit]      = useState(schedule.dailyJobLimit)
@@ -74,14 +106,33 @@ export default function AppointmentCalendar({
   const closeLabel = formatHour(closingHour)
 
   const now = new Date()
-  const monthLabel = now.toLocaleString('default', { month: 'long', year: 'numeric' })
+  const monthLabel       = now.toLocaleString('default', { month: 'long', year: 'numeric' })
+  const mobileMonthLabel = now.toLocaleString('default', { month: 'long' })
 
   const dayBookings     = appts.filter(a => new Date(a.appointmentDate).getDate() === activeDate)
   const selectedDateLbl = `${activeDate} ${monthLabel}`
 
   return (
     <section className={`panel appointmentPanel ${compact ? 'compactCalendar' : ''}`}>
-      <div className="sectionHead calendarHead">
+
+      {/* ── Mobile header (hidden ≥680px) ─────────────────────────────────── */}
+      <div className="mobileCalendarHeader">
+        <button className="mobileCalMenuBtn" type="button" aria-label="Open menu">
+          <Menu size={22} />
+        </button>
+        <button className="mobileCalMonth" type="button">
+          <span>{mobileMonthLabel}</span>
+          <ChevronDown size={16} />
+        </button>
+        <div className="mobileCalHeaderRight">
+          <button type="button" aria-label="Search"><Search size={22} /></button>
+          <div className="mobileCalDateBadge">{now.getDate()}</div>
+          <div className="mobileCalAvatar">{viewerRole.charAt(0).toUpperCase()}</div>
+        </div>
+      </div>
+
+      {/* ── Desktop header (hidden <680px) ────────────────────────────────── */}
+      <div className="sectionHead calendarHead desktopCalHead">
         <div>
           <p className="eyebrow">Calendar access: {viewerRole}</p>
           <h2>{title}</h2>
@@ -102,7 +153,7 @@ export default function AppointmentCalendar({
         </div>
       </div>
 
-      <div className="calendarToolbar">
+      <div className="calendarToolbar desktopCalToolbar">
         <div className="viewToggle" role="tablist" aria-label="Calendar view selector">
           {viewOptions.map(o => (
             <button key={o} className={view === o ? 'active' : ''} onClick={() => setView(o)}>{o}</button>
@@ -112,6 +163,21 @@ export default function AppointmentCalendar({
           <span><Clock size={15} /> {openLabel} - {closeLabel}</span>
           <span><Users size={15} /> Daily limit {effectiveLimit}</span>
         </div>
+      </div>
+
+      {/* ── Mobile view toggle (hidden ≥680px) ────────────────────────────── */}
+      <div className="mobileCalViewToggle">
+        {viewOptions.map(o => (
+          <button key={o} type="button" onClick={() => setView(o)}
+            style={{
+              padding: '7px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
+              fontWeight: 700, fontSize: 12,
+              background: view === o ? 'var(--teal)' : '#f2f4f7',
+              color: view === o ? '#fff' : '#344054',
+            }}>
+            {o}
+          </button>
+        ))}
       </div>
 
       {canSetDailyLimit && (
@@ -150,6 +216,9 @@ export default function AppointmentCalendar({
           selectedDateLabel={selectedDateLbl}
           canBook={canBook}
         />
+      )}
+      {view === 'Schedule' && (
+        <ScheduleView bookings={appts} canBook={canBook} />
       )}
     </section>
   )
@@ -337,5 +406,129 @@ function BookingCard({ booking, wide = false }) {
       <span>{booking.serviceType || ''}</span>
       <small className={`pill ${statusClass(booking.status)}`}>{booking.status}</small>
     </article>
+  )
+}
+
+// ── Schedule (agenda) view ────────────────────────────────────────────────────
+
+function ScheduleView({ bookings, canBook }) {
+  const now = new Date()
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const todayStr = toDateStr(todayMidnight)
+
+  // Start from Monday of the current week
+  const monday = new Date(todayMidnight)
+  const startDow = monday.getDay()
+  monday.setDate(monday.getDate() - (startDow === 0 ? 6 : startDow - 1))
+
+  const endDate = new Date(todayMidnight)
+  endDate.setDate(endDate.getDate() + 90)
+
+  // Build list of weeks (Mon–Sun) within range
+  const weeks = []
+  const cursor = new Date(monday)
+  while (cursor <= endDate) {
+    const weekStart = new Date(cursor)
+    const weekEndFull = new Date(cursor)
+    weekEndFull.setDate(cursor.getDate() + 6)
+
+    const days = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(cursor)
+      d.setDate(cursor.getDate() + i)
+      if (d >= todayMidnight && d <= endDate) days.push(new Date(d))
+    }
+
+    if (days.length > 0) {
+      weeks.push({ weekStart, weekEnd: weekEndFull, days })
+    }
+    cursor.setDate(cursor.getDate() + 7)
+  }
+
+  // Build sections: inject month banners when a week contains the 1st of a new month
+  const sections = []
+  let lastBannerMonth = -1
+  weeks.forEach(week => {
+    const monthStart = week.days.find(d => d.getDate() === 1)
+    if (monthStart) {
+      const m = monthStart.getMonth()
+      if (m !== lastBannerMonth) {
+        sections.push({ type: 'monthBanner', month: m, year: monthStart.getFullYear() })
+        lastBannerMonth = m
+      }
+    }
+    sections.push({ type: 'week', ...week })
+  })
+
+  return (
+    <div className="scheduleView">
+      {sections.map((section, idx) => {
+        if (section.type === 'monthBanner') {
+          return <MonthBanner key={`mb-${section.month}-${section.year}`} month={section.month} year={section.year} />
+        }
+
+        const { weekStart, weekEnd, days } = section
+        const weekLabel = formatWeekLabel(weekStart, weekEnd)
+
+        // Only render day rows for today or days with bookings
+        const relevantDays = days.filter(d => {
+          const ds = toDateStr(d)
+          return ds === todayStr || bookings.some(a => toDateStr(new Date(a.appointmentDate)) === ds)
+        })
+
+        return (
+          <div key={`wk-${toDateStr(weekStart)}`} className="scheduleWeekGroup">
+            <div className="scheduleWeekHeader">{weekLabel}</div>
+            {relevantDays.map(d => {
+              const ds = toDateStr(d)
+              const dayBkgs = bookings.filter(a => toDateStr(new Date(a.appointmentDate)) === ds)
+              return (
+                <ScheduleDayRow
+                  key={ds}
+                  date={d}
+                  bookings={dayBkgs}
+                  isToday={ds === todayStr}
+                  canBook={canBook}
+                />
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ScheduleDayRow({ date, bookings, isToday, canBook }) {
+  return (
+    <div className="scheduleDayRow">
+      <div className="scheduleDayLabel">
+        <span className="scheduleDayName">{DAY_ABBR[date.getDay()]}</span>
+        <span className={`scheduleDayNum${isToday ? ' scheduleToday' : ''}`}>{date.getDate()}</span>
+      </div>
+      <div className="scheduleDayEvents">
+        {bookings.length > 0
+          ? bookings.map(b => (
+              <div key={b.id} className="scheduleEventCard">
+                <span>{b.customer?.name || b.serviceType || 'Appointment'}</span>
+                {b.appointmentTime && <small>{b.appointmentTime}</small>}
+              </div>
+            ))
+          : isToday && (
+              <span className="scheduleNothingPlanned">
+                {canBook ? 'Nothing planned. Tap to create.' : 'Nothing planned.'}
+              </span>
+            )
+        }
+      </div>
+    </div>
+  )
+}
+
+function MonthBanner({ month, year }) {
+  return (
+    <div className="scheduleMonthBanner" style={{ background: MONTH_GRADIENTS[month] }}>
+      <strong>{MONTH_NAMES[month]}</strong>
+    </div>
   )
 }

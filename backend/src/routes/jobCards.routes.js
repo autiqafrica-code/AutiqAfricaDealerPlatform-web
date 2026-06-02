@@ -8,7 +8,7 @@ const jobs             = require('../controllers/jobCards.controller')
 
 const frontDesk     = ['FRONT_DESK']
 const frontAndMgr   = ['FRONT_DESK', 'MANAGER', 'WORKSHOP_CONTROLLER']
-const statusRoles   = ['TECHNICIAN', 'WORKSHOP_CONTROLLER', 'FRONT_DESK', 'MANAGER']
+const statusRoles   = ['TECHNICIAN', 'WORKSHOP_CONTROLLER', 'FRONT_DESK', 'MANAGER', 'PARTS_INTERPRETER']
 const techAndWC     = ['TECHNICIAN', 'WORKSHOP_CONTROLLER']
 const wcAndMgr      = ['WORKSHOP_CONTROLLER', 'MANAGER']
 const notifyRoles   = ['FRONT_DESK', 'MANAGER']
@@ -21,8 +21,9 @@ router.get('/:id',                       jobs.getJob)
 router.put('/:id',         requireRoles(...frontAndMgr),  jobs.updateJob)
 router.patch('/:id/status',requireRoles(...statusRoles),  jobs.updateJobStatus)
 router.patch('/:id/progress',requireRoles(...techAndWC),  jobs.updateJobProgress)
-router.patch('/:id/assign-technician', requireRoles(...wcAndMgr), jobs.assignTechnician)
-router.patch('/:id/assign-controller', requireRoles('MANAGER','FRONT_DESK'), jobs.assignController)
+router.patch('/:id/assign-technician',          requireRoles(...wcAndMgr),                         jobs.assignTechnician)
+router.patch('/:id/assign-controller',          requireRoles('MANAGER','FRONT_DESK'),              jobs.assignController)
+router.patch('/:id/assign-parts-interpreter',   requireRoles('TECHNICIAN','WORKSHOP_CONTROLLER','MANAGER'), jobs.assignPartsInterpreter)
 router.patch('/:id/qc-approve',        requireRoles('MANAGER'), jobs.qcApprove)
 router.get('/:id/checklist',           jobs.getChecklist)
 router.post('/:id/checklist',          requireRoles(...techAndWC), jobs.updateChecklist)

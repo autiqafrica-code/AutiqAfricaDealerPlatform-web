@@ -266,11 +266,55 @@ async function sendUpdateToFrontDesk(req, res, next) {
   } catch (err) { next(err) }
 }
 
+// ── POST /api/workshop-controller/jobs/:id/assign-parts-interpreter ──────────
+
+async function assignPartsInterpreter(req, res, next) {
+  try {
+    const { workshopId, id: userId, name: userName, roleCode } = req.user
+    const { id } = req.params
+    const { partsInterpreterId, notes } = req.body
+
+    if (!partsInterpreterId) return badRequest(res, 'Parts Interpreter ID is required')
+
+    const job = await prisma.jobCard.findFirst({ where: { id, workshopId, deletedAt: null } })
+    if (!job) return notFound(res, 'Job not found')
+
+    const pi = await prisma.user.findFirst({ where: { id: partsInterpreterId, workshopId, deletedAt: null } })
+    if (!pi) return notFound(res, 'Parts Interpreter not found in this workshop')
+    if (pi.role !== 'PartsInterpreter') return badRequest(res, 'Selected user is not a Parts Interpreter')
+
+    const updated = await prisma.jobCard.update({
+      where: { id },
+      data: { assignedPartsInterpreterId: partsInterpreterId, status: 'Accepted' },
+    })
+
+    await recordHistory(id, workshopId, job.status, 'Accepted',
+      { id: userId, name: userName, roleCode },
+      `Parts Interpreter assigned: ${pi.name}`,
+      notes || null)
+
+    await prisma.notification.create({
+      data: {
+        workshopId,
+        userId:    partsInterpreterId,
+        jobCardId: id,
+        channel:   'WhatsApp',
+        type:      'JobAssigned',
+        message:   `Job ${job.jobNumber} has been assigned to you for parts interpretation. Please review and start work.`,
+        status:    'Pending',
+      },
+    }).catch(() => {})
+
+    return success(res, { job: updated }, `Job assigned to ${pi.name}`)
+  } catch (err) { next(err) }
+}
+
 module.exports = {
   listJobs,
   getJob,
   reviewJob,
   assignTechnician,
+  assignPartsInterpreter,
   sendToTechnician,
   getTechnicianUpdates,
   sendUpdateToFrontDesk,

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
-  BellRing, Car, Check, ChevronRight, Clock, FileCheck2, FilePlus2, Search, Send, Truck, UserPlus, X,
+  BellRing, Car, Check, CheckCircle2, ChevronRight, Clock, CreditCard, FileCheck2, FilePlus2, Search, Send, Truck, UserCheck, UserPlus, X,
 } from 'lucide-react'
 import { apiFetch } from '../../utils/api'
 
@@ -11,9 +11,10 @@ export default function FrontDesk() {
   const location   = useLocation()
   const [activeTab, setActiveTab] = useState('Overview')
 
-  const [customers,     setCustomers]     = useState([])
-  const [jobs,          setJobs]          = useState([])
-  const [readyJobs,     setReadyJobs]     = useState([])
+  const [customers,           setCustomers]           = useState([])
+  const [jobs,                setJobs]                = useState([])
+  const [readyJobs,           setReadyJobs]           = useState([])
+  const [workshopControllers, setWorkshopControllers] = useState([])
   const [loading,       setLoading]       = useState(true)
   const [loadingReady,  setLoadingReady]  = useState(false)
   const [searchTerm,    setSearchTerm]    = useState('')
@@ -28,6 +29,14 @@ export default function FrontDesk() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [additionalWork,setAdditionalWork]= useState([])
   const [sendToWCNotes, setSendToWCNotes] = useState('')
+
+  // Assign workshop controller
+  const [assignWcId,    setAssignWcId]    = useState('')
+  const [assignWcNotes, setAssignWcNotes] = useState('')
+
+  // Payment / Completed status actions
+  const [paymentNotes,   setPaymentNotes]   = useState('')
+  const [completedNotes, setCompletedNotes] = useState('')
 
   // Contact / delivery
   const [contactMethod, setContactMethod] = useState('Phone')
@@ -45,11 +54,19 @@ export default function FrontDesk() {
   const [message, setMessage] = useState('')
   const [msgType, setMsgType] = useState('success')
 
-  useEffect(() => { loadData() }, [location.state])
+  useEffect(() => { loadData(); loadWorkshopControllers() }, [location.state])
 
   useEffect(() => {
     if (activeTab === 'Delivery') loadReadyJobs()
   }, [activeTab])
+
+  async function loadWorkshopControllers() {
+    try {
+      const res  = await apiFetch('/users?role=WorkshopController&limit=50')
+      const data = await res.json()
+      if (data.success) setWorkshopControllers(data.data.data || data.data || [])
+    } catch { /* ignore */ }
+  }
 
   async function loadData() {
     setLoading(true)
@@ -95,6 +112,7 @@ export default function FrontDesk() {
     setLoadingDetail(true); setMessage('')
     setSendToWCNotes(''); setContactMethod('Phone'); setContactNotes('')
     setDeliveryNotes(''); setCollectedBy('')
+    setAssignWcId(''); setAssignWcNotes(''); setPaymentNotes(''); setCompletedNotes('')
     try {
       const res  = await apiFetch(`/front-desk/jobs/${jobId}`)
       const data = await res.json()
@@ -104,6 +122,60 @@ export default function FrontDesk() {
       }
     } catch { /* ignore */ }
     finally { setLoadingDetail(false) }
+  }
+
+  async function assignWorkshopController() {
+    if (!selectedJob || !assignWcId) { setMsgType('error'); setMessage('Select a Workshop Controller'); return }
+    setSaving(true); setMessage('')
+    try {
+      const res  = await apiFetch(`/jobs/${selectedJob.id}/assign-controller`, {
+        method: 'PATCH',
+        body: JSON.stringify({ controllerId: assignWcId, notes: assignWcNotes || undefined }),
+      })
+      const data = await res.json()
+      if (!data.success) { setMsgType('error'); setMessage(data.message || 'Failed to assign'); return }
+      setSelectedJob(p => ({ ...p, assignedControllerId: assignWcId }))
+      setJobs(p => p.map(j => j.id === selectedJob.id ? { ...j, assignedControllerId: assignWcId } : j))
+      setMsgType('success'); setMessage('Workshop Controller assigned.')
+      setAssignWcId(''); setAssignWcNotes('')
+    } catch { setMsgType('error'); setMessage('Network error') }
+    finally { setSaving(false) }
+  }
+
+  async function markPayment() {
+    if (!selectedJob) return
+    setSaving(true); setMessage('')
+    try {
+      const res  = await apiFetch(`/jobs/${selectedJob.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'Payment', notes: paymentNotes || undefined }),
+      })
+      const data = await res.json()
+      if (!data.success) { setMsgType('error'); setMessage(data.message || 'Failed'); return }
+      setSelectedJob(p => ({ ...p, status: 'Payment' }))
+      setJobs(p => p.map(j => j.id === selectedJob.id ? { ...j, status: 'Payment' } : j))
+      setMsgType('success'); setMessage('Job moved to Payment. Customer and Accounts notified.')
+      setPaymentNotes('')
+    } catch { setMsgType('error'); setMessage('Network error') }
+    finally { setSaving(false) }
+  }
+
+  async function markCompleted() {
+    if (!selectedJob) return
+    setSaving(true); setMessage('')
+    try {
+      const res  = await apiFetch(`/jobs/${selectedJob.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'Completed', notes: completedNotes || undefined }),
+      })
+      const data = await res.json()
+      if (!data.success) { setMsgType('error'); setMessage(data.message || 'Failed'); return }
+      setSelectedJob(p => ({ ...p, status: 'Completed' }))
+      setJobs(p => p.map(j => j.id === selectedJob.id ? { ...j, status: 'Completed' } : j))
+      setMsgType('success'); setMessage('Job marked Completed. Customer notified for delivery/pickup.')
+      setCompletedNotes('')
+    } catch { setMsgType('error'); setMessage('Network error') }
+    finally { setSaving(false) }
   }
 
   async function sendToWorkshopController() {
@@ -244,7 +316,10 @@ export default function FrontDesk() {
 
   const pendingAW = additionalWork.filter(r => r.status === 'SENT_TO_FRONT_DESK' && !r.customerDecision)
 
-  const canSendToWC = selectedJob && ['New', 'Accepted', 'Completed', 'QCReview', 'Ready'].includes(selectedJob.status)
+  const canSendToWC    = selectedJob && ['New', 'Accepted', 'Completed', 'QCReview', 'Ready'].includes(selectedJob.status)
+  const canAssignWC    = selectedJob && !['Closed', 'Cancelled', 'VehicleDelivered', 'Completed'].includes(selectedJob.status)
+  const canMarkPayment = selectedJob && ['Ready', 'TechnicianCompleted', 'QCReview'].includes(selectedJob.status)
+  const canMarkCompleted = selectedJob && ['Payment', 'PaymentCleared', 'InvoiceGenerated', 'ReadyForDelivery'].includes(selectedJob.status)
 
   return (
     <div className="pageStack">
@@ -480,6 +555,83 @@ export default function FrontDesk() {
                     />
                     <button className="primaryBtn" onClick={sendToWorkshopController} disabled={saving}>
                       <Send size={14} /> Send to Workshop
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Assign Workshop Controller */}
+              {canAssignWC && (
+                <div style={{ borderBottom: '1px solid #e4e7ec', paddingBottom: 16, marginBottom: 16 }}>
+                  <h4 style={{ marginBottom: 8 }}>Assign Workshop Controller</h4>
+                  {selectedJob.assignedController && (
+                    <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+                      Currently: <strong>{selectedJob.assignedController.name}</strong>
+                    </p>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <select
+                      value={assignWcId}
+                      onChange={e => setAssignWcId(e.target.value)}
+                      style={{ flex: 1, minWidth: 160, padding: '8px 10px', borderRadius: 8, border: '1px solid #d0d5dd', fontSize: 13 }}
+                    >
+                      <option value="">— Select Workshop Controller —</option>
+                      {workshopControllers.map(u => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      style={{ flex: 1, minWidth: 140, padding: '8px 10px', borderRadius: 8, border: '1px solid #d0d5dd', fontSize: 13 }}
+                      value={assignWcNotes}
+                      onChange={e => setAssignWcNotes(e.target.value)}
+                      placeholder="Notes (optional)…"
+                    />
+                    <button className="primaryBtn" onClick={assignWorkshopController} disabled={saving || !assignWcId}>
+                      <UserCheck size={14} /> Assign WC
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Mark as Payment */}
+              {canMarkPayment && (
+                <div style={{ borderBottom: '1px solid #e4e7ec', paddingBottom: 16, marginBottom: 16 }}>
+                  <h4 style={{ marginBottom: 8 }}>Send to Payment</h4>
+                  <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+                    Job is ready. Notify customer to make payment and alert Accounts department.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid #d0d5dd', fontSize: 13 }}
+                      value={paymentNotes}
+                      onChange={e => setPaymentNotes(e.target.value)}
+                      placeholder="Notes for customer/accounts (optional)…"
+                    />
+                    <button className="primaryBtn" onClick={markPayment} disabled={saving}
+                      style={{ background: 'var(--teal)', whiteSpace: 'nowrap' }}>
+                      <CreditCard size={14} /> Mark Payment
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Mark as Completed */}
+              {canMarkCompleted && (
+                <div style={{ borderBottom: '1px solid #e4e7ec', paddingBottom: 16, marginBottom: 16 }}>
+                  <h4 style={{ marginBottom: 8 }}>Mark as Completed</h4>
+                  <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+                    Once accounts confirms payment, mark job complete and notify customer for delivery/pickup.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid #d0d5dd', fontSize: 13 }}
+                      value={completedNotes}
+                      onChange={e => setCompletedNotes(e.target.value)}
+                      placeholder="Delivery/pickup notes (optional)…"
+                    />
+                    <button className="primaryBtn" onClick={markCompleted} disabled={saving}
+                      style={{ background: '#039855', whiteSpace: 'nowrap' }}>
+                      <CheckCircle2 size={14} /> Mark Completed
                     </button>
                   </div>
                 </div>

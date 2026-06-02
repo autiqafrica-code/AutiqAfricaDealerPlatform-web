@@ -56,6 +56,16 @@ export default function Technician() {
   const [newIssue,      setNewIssue]      = useState({ title: '', severity: 'High', note: '' })
   const [newCheckLabel, setNewCheckLabel] = useState('')
 
+  // Parts Interpreter assignment
+  const [partsInterpreters,  setPartsInterpreters]  = useState([])
+  const [assignPiId,         setAssignPiId]         = useState('')
+  const [assignPiNotes,      setAssignPiNotes]      = useState('')
+  const [assignPiBusy,       setAssignPiBusy]       = useState(false)
+
+  // WaitingParts / Ready
+  const [waitingPartsNotes,  setWaitingPartsNotes]  = useState('')
+  const [readyNotes,         setReadyNotes]         = useState('')
+
   const [saving,      setSaving]      = useState(false)
   const [issueSaving, setIssueSaving] = useState(false)
   const [awSaving,    setAwSaving]    = useState(false)
@@ -67,8 +77,16 @@ export default function Technician() {
 
   const workspaceRef = useRef(null)
 
-  useEffect(() => { loadJobs(); loadQuoteCount() }, [])
+  useEffect(() => { loadJobs(); loadQuoteCount(); loadPartsInterpreters() }, [])
   useEffect(() => { if (tab === 'Quotation Requests') loadQuotations() }, [tab])
+
+  async function loadPartsInterpreters() {
+    try {
+      const res  = await apiFetch('/users?role=PartsInterpreter&limit=50')
+      const data = await res.json()
+      if (data.success) setPartsInterpreters(data.data.data || data.data || [])
+    } catch { /* ignore */ }
+  }
 
   async function loadQuoteCount() {
     try {
@@ -131,6 +149,59 @@ export default function Technician() {
   }, [issues])
 
   const activeIssueSev = ISSUE_SEVERITY.find(s => s.value === newIssue.severity) || ISSUE_SEVERITY[0]
+
+  async function assignPartsInterpreterFn() {
+    if (!selectedJob || !assignPiId) { setMsgType('error'); setMessage('Select a Parts Interpreter'); return }
+    setAssignPiBusy(true); setMessage('')
+    try {
+      const res  = await apiFetch(`/jobs/${selectedJob.id}/assign-parts-interpreter`, {
+        method: 'PATCH',
+        body: JSON.stringify({ partsInterpreterId: assignPiId, notes: assignPiNotes || undefined }),
+      })
+      const data = await res.json()
+      if (!data.success) { setMsgType('error'); setMessage(data.message || 'Failed to assign'); return }
+      setSelectedJob(p => ({ ...p, assignedPartsInterpreterId: assignPiId }))
+      setMsgType('success'); setMessage('Parts Interpreter assigned to this job.')
+      setAssignPiId(''); setAssignPiNotes('')
+    } catch { setMsgType('error'); setMessage('Network error') }
+    finally { setAssignPiBusy(false) }
+  }
+
+  async function markWaitingParts() {
+    if (!selectedJob) return
+    setSaving(true); setMessage('')
+    try {
+      const res  = await apiFetch(`/jobs/${selectedJob.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'WaitingParts', notes: waitingPartsNotes || undefined }),
+      })
+      const data = await res.json()
+      if (!data.success) { setMsgType('error'); setMessage(data.message || 'Failed'); return }
+      setSelectedJob(p => ({ ...p, status: 'WaitingParts' }))
+      setJobs(p => p.map(j => j.id === selectedJob.id ? { ...j, status: 'WaitingParts' } : j))
+      setMsgType('success'); setMessage('Job marked as Waiting for Parts.')
+      setWaitingPartsNotes('')
+    } catch { setMsgType('error'); setMessage('Network error') }
+    finally { setSaving(false) }
+  }
+
+  async function markReady() {
+    if (!selectedJob) return
+    setSaving(true); setMessage('')
+    try {
+      const res  = await apiFetch(`/jobs/${selectedJob.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'Ready', notes: readyNotes || undefined }),
+      })
+      const data = await res.json()
+      if (!data.success) { setMsgType('error'); setMessage(data.message || 'Failed'); return }
+      setSelectedJob(p => ({ ...p, status: 'Ready' }))
+      setJobs(p => p.map(j => j.id === selectedJob.id ? { ...j, status: 'Ready' } : j))
+      setMsgType('success'); setMessage('Job marked as Ready. Front Desk notified.')
+      setReadyNotes('')
+    } catch { setMsgType('error'); setMessage('Network error') }
+    finally { setSaving(false) }
+  }
 
   async function startJob() {
     if (!selectedJob) return
@@ -279,10 +350,13 @@ export default function Technician() {
   const waitingCount    = jobs.filter(j => ['WaitingParts', 'WaitingApproval', 'AdditionalWorkIdentified'].includes(j.status)).length
   const completedCount  = jobs.filter(j => ['Completed', 'TechnicianCompleted'].includes(j.status)).length
 
-  const canStart    = selectedJob && ['Accepted', 'AssignedToTechnician', 'AdditionalWorkApproved', 'New'].includes(selectedJob.status)
-  const canProgress = selectedJob && selectedJob.status === 'InProgress'
-  const canComplete = selectedJob && ['InProgress', 'WaitingApproval', 'WaitingParts', 'AdditionalWorkApproved'].includes(selectedJob.status)
-  const canAddWork  = selectedJob && ['InProgress', 'WaitingApproval', 'WaitingParts'].includes(selectedJob.status)
+  const canStart       = selectedJob && ['Accepted', 'AssignedToTechnician', 'AdditionalWorkApproved', 'New'].includes(selectedJob.status)
+  const canProgress    = selectedJob && selectedJob.status === 'InProgress'
+  const canComplete    = selectedJob && ['InProgress', 'WaitingApproval', 'WaitingParts', 'AdditionalWorkApproved'].includes(selectedJob.status)
+  const canAddWork     = selectedJob && ['InProgress', 'WaitingApproval', 'WaitingParts'].includes(selectedJob.status)
+  const canWaitParts   = selectedJob && selectedJob.status === 'InProgress'
+  const canMarkReady   = selectedJob && ['InProgress', 'WaitingParts'].includes(selectedJob.status)
+  const canAssignParts = selectedJob && !['Completed', 'Closed', 'Cancelled', 'Ready'].includes(selectedJob.status)
 
   return (
     <div className="pageStack">
@@ -464,6 +538,70 @@ export default function Technician() {
                   </button>
                 </div>
               </>
+            )}
+
+            {/* Waiting Parts action */}
+            {canWaitParts && (
+              <div className="techField">
+                <span style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, display: 'block' }}>Waiting for Parts</span>
+                <textarea
+                  value={waitingPartsNotes}
+                  onChange={e => setWaitingPartsNotes(e.target.value)}
+                  placeholder="Which parts are needed and why? (optional)"
+                  rows={2}
+                  style={{ width: '100%', fontSize: 12, borderRadius: 6, border: '1px solid #d0d5dd', padding: '6px 8px' }}
+                />
+                <button type="button" className="softBtn" onClick={markWaitingParts} disabled={saving}
+                  style={{ marginTop: 6, borderColor: 'var(--amber)', color: '#b54708', width: '100%' }}>
+                  Waiting for Parts
+                </button>
+              </div>
+            )}
+
+            {/* Mark Ready action */}
+            {canMarkReady && (
+              <div className="techField">
+                <span style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, display: 'block' }}>Mark as Ready</span>
+                <textarea
+                  value={readyNotes}
+                  onChange={e => setReadyNotes(e.target.value)}
+                  placeholder="Final notes / what was completed (optional)"
+                  rows={2}
+                  style={{ width: '100%', fontSize: 12, borderRadius: 6, border: '1px solid #d0d5dd', padding: '6px 8px' }}
+                />
+                <button type="button" className="primaryBtn" onClick={markReady} disabled={saving}
+                  style={{ marginTop: 6, background: '#039855', color: '#fff', width: '100%' }}>
+                  Mark as Ready
+                </button>
+              </div>
+            )}
+
+            {/* Assign Parts Interpreter */}
+            {canAssignParts && (
+              <div className="techField">
+                <span style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, display: 'block' }}>Assign Parts Interpreter</span>
+                {selectedJob.assignedPartsInterpreterId && (
+                  <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Currently assigned</p>
+                )}
+                <select
+                  value={assignPiId}
+                  onChange={e => setAssignPiId(e.target.value)}
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', fontSize: 12, marginBottom: 6 }}
+                >
+                  <option value="">— Select Parts Interpreter —</option>
+                  {partsInterpreters.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <input
+                  value={assignPiNotes}
+                  onChange={e => setAssignPiNotes(e.target.value)}
+                  placeholder="Notes (optional)"
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', fontSize: 12, marginBottom: 6, boxSizing: 'border-box' }}
+                />
+                <button type="button" className="softBtn" onClick={assignPartsInterpreterFn} disabled={assignPiBusy || !assignPiId}
+                  style={{ width: '100%' }}>
+                  {assignPiBusy ? 'Assigning…' : 'Assign Parts Interpreter'}
+                </button>
+              </div>
             )}
 
             {/* Checklist */}

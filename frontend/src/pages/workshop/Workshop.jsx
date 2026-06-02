@@ -4,6 +4,7 @@ import {
   AlertTriangle, CheckCircle2, ChevronRight, FileText,
   Package, Send, Sliders, UserCheck, Wrench, X,
 } from 'lucide-react'
+
 import { apiFetch, getUser } from '../../utils/api'
 import QuotationReviewPanel from '../../components/QuotationReviewPanel'
 
@@ -12,9 +13,10 @@ const TABS = ['Dashboard', 'Jobs', 'Quotation Requests', 'Failed Components']
 export default function Workshop() {
   const [tab, setTab] = useState('Dashboard')
 
-  const [jobs,        setJobs]        = useState([])
-  const [technicians, setTechnicians] = useState([])
-  const [quotations,  setQuotations]  = useState([])
+  const [jobs,               setJobs]               = useState([])
+  const [technicians,        setTechnicians]        = useState([])
+  const [partsInterpreters,  setPartsInterpreters]  = useState([])
+  const [quotations,         setQuotations]         = useState([])
   const [components,  setComponents]  = useState([])
 
   const [loadingJobs,   setLoadingJobs]   = useState(true)
@@ -36,6 +38,10 @@ export default function Workshop() {
   const [assignNotes,   setAssignNotes]   = useState('')
   const [sendNotes,     setSendNotes]     = useState('')
 
+  // Parts Interpreter assignment
+  const [assignPiId,    setAssignPiId]    = useState('')
+  const [assignPiNotes, setAssignPiNotes] = useState('')
+
   // Front desk update
   const [fdUpdateNotes, setFdUpdateNotes] = useState('')
 
@@ -43,7 +49,7 @@ export default function Workshop() {
   const [message,  setMessage]  = useState('')
   const [msgType,  setMsgType]  = useState('success')
 
-  useEffect(() => { loadJobs(); loadTechnicians(); loadQuoteCount() }, [])
+  useEffect(() => { loadJobs(); loadTechnicians(); loadPartsInterpreters(); loadQuoteCount() }, [])
   useEffect(() => {
     if (tab === 'Quotation Requests') loadQuotations()
     if (tab === 'Failed Components')  loadComponents()
@@ -75,6 +81,14 @@ export default function Workshop() {
     } catch { /* ignore */ }
   }
 
+  async function loadPartsInterpreters() {
+    try {
+      const res  = await apiFetch('/users?role=PartsInterpreter&limit=50')
+      const data = await res.json()
+      if (data.success) setPartsInterpreters(data.data.data || data.data || [])
+    } catch { /* ignore */ }
+  }
+
   async function loadQuotations() {
     setLoadingQuotes(true)
     try {
@@ -99,7 +113,7 @@ export default function Workshop() {
     setLoadingDetail(true)
     setMessage('')
     setBayAllocation(''); setRepairRoute(''); setLabourEstimate(''); setReviewNotes('')
-    setAssignNotes(''); setSendNotes(''); setFdUpdateNotes('')
+    setAssignNotes(''); setSendNotes(''); setFdUpdateNotes(''); setAssignPiNotes('')
     try {
       const res  = await apiFetch(`/workshop-controller/jobs/${jobId}`)
       const data = await res.json()
@@ -142,6 +156,24 @@ export default function Workshop() {
       setJobs(p => p.map(j => j.id === selectedJob.id ? { ...j, status: 'AssignedToTechnician', assignedTechnicianId: assignTechId } : j))
       setMsgType('success'); setMessage('Technician assigned successfully.')
       setAssignNotes('')
+    } catch { setMsgType('error'); setMessage('Network error') }
+    finally { setSaving(false) }
+  }
+
+  async function assignPartsInterpreterFn() {
+    if (!selectedJob || !assignPiId) { setMsgType('error'); setMessage('Select a Parts Interpreter'); return }
+    setSaving(true); setMessage('')
+    try {
+      const res  = await apiFetch(`/workshop-controller/jobs/${selectedJob.id}/assign-parts-interpreter`, {
+        method: 'POST',
+        body: JSON.stringify({ partsInterpreterId: assignPiId, notes: assignPiNotes }),
+      })
+      const data = await res.json()
+      if (!data.success) { setMsgType('error'); setMessage(data.message || 'Failed to assign'); return }
+      setSelectedJob(p => ({ ...p, status: 'Accepted', assignedPartsInterpreterId: assignPiId }))
+      setJobs(p => p.map(j => j.id === selectedJob.id ? { ...j, status: 'Accepted', assignedPartsInterpreterId: assignPiId } : j))
+      setMsgType('success'); setMessage('Parts Interpreter assigned.')
+      setAssignPiNotes('')
     } catch { setMsgType('error'); setMessage('Network error') }
     finally { setSaving(false) }
   }
@@ -414,6 +446,34 @@ export default function Workshop() {
                       <Send size={14} /> Send to Technician
                     </button>
                   )}
+                </div>
+              </div>
+
+              {/* Assign Parts Interpreter */}
+              <div style={{ borderBottom: '1px solid #e4e7ec', paddingBottom: 16, marginBottom: 16 }}>
+                <h4 style={{ marginBottom: 10 }}>Assign Parts Interpreter</h4>
+                {selectedJob.assignedPartsInterpreter && (
+                  <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+                    Currently assigned: <strong>{selectedJob.assignedPartsInterpreter.name}</strong>
+                  </p>
+                )}
+                <div className="formGrid twoCols">
+                  <label>
+                    Parts Interpreter
+                    <select value={assignPiId} onChange={e => setAssignPiId(e.target.value)} disabled={!canAssign}>
+                      <option value="">— Select Parts Interpreter —</option>
+                      {partsInterpreters.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Notes
+                    <input value={assignPiNotes} onChange={e => setAssignPiNotes(e.target.value)} placeholder="Optional notes…" />
+                  </label>
+                </div>
+                <div className="rowActions" style={{ marginTop: 8 }}>
+                  <button className="softBtn" onClick={assignPartsInterpreterFn} disabled={saving || !canAssign || !assignPiId}>
+                    <UserCheck size={14} /> Assign Parts Interpreter
+                  </button>
                 </div>
               </div>
 
